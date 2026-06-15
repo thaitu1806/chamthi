@@ -900,50 +900,92 @@ public class GeminiWebService : IDisposable
     {
         if (_page == null) return "Không lấy được kết quả.";
 
-        // Dùng JS để lấy response mới nhất
+        // Đợi DOM ổn định
+        await Task.Delay(3000);
+
+        // Lấy TOÀN BỘ text response cuối cùng bằng nhiều cách
         var response = await _page.EvaluateAsync<string?>(@"() => {
-            // Thử nhiều selector
+            // Cách 1: Lấy tất cả response containers, chọn cái cuối & dài nhất
             const selectors = [
                 '[data-message-author-role=""model""]',
-                '.model-response-text',
-                '.markdown-main-panel', 
-                '.response-container',
                 'message-content.model-response-text',
-                '[class*=""response""][class*=""text""]',
-                '[class*=""model""][class*=""response""]',
+                '.model-response-text',
+                '.markdown-main-panel',
+                '.response-container',
             ];
+            
+            let bestText = '';
             
             for (const sel of selectors) {
                 const elements = document.querySelectorAll(sel);
                 if (elements.length > 0) {
+                    // Lấy element cuối cùng (response mới nhất)
                     const last = elements[elements.length - 1];
-                    const text = last.innerText || last.textContent;
-                    if (text && text.trim().length > 10) return text.trim();
+                    const text = (last.innerText || last.textContent || '').trim();
+                    if (text.length > bestText.length) {
+                        bestText = text;
+                    }
                 }
             }
-
-            // Fallback: tìm tất cả message turns và lấy cái cuối cùng từ model
-            const allTurns = document.querySelectorAll('[class*=""turn""], [class*=""message""]');
-            if (allTurns.length > 0) {
-                const last = allTurns[allTurns.length - 1];
-                const text = last.innerText || last.textContent;
-                if (text && text.trim().length > 20) return text.trim();
-            }
-
-            // Final fallback: lấy main content
-            const main = document.querySelector('[role=""main""]') || document.querySelector('main');
-            if (main) return main.innerText;
             
-            return null;
+            if (bestText.length > 50) return bestText;
+
+            // Cách 2: Tìm theo cấu trúc conversation - lấy block cuối có nội dung dài
+            const allElements = document.querySelectorAll('div, article, section');
+            let longestInLowerHalf = '';
+            const totalHeight = document.body.scrollHeight;
+            
+            for (const el of allElements) {
+                const rect = el.getBoundingClientRect();
+                const text = (el.innerText || '').trim();
+                // Element phải ở nửa dưới page (response area) và có content đáng kể
+                if (rect.top > totalHeight * 0.2 && text.length > 100 && text.length < 50000) {
+                    // Kiểm tra có dấu hiệu là response (chứa từ khóa chấm bài)
+                    const lower = text.toLowerCase();
+                    if (lower.includes('điểm') || lower.includes('câu') || lower.includes('nhận xét') || lower.includes('đúng') || lower.includes('sai')) {
+                        if (text.length > longestInLowerHalf.length) {
+                            longestInLowerHalf = text;
+                        }
+                    }
+                }
+            }
+            
+            if (longestInLowerHalf.length > bestText.length) return longestInLowerHalf;
+            if (bestText.length > 20) return bestText;
+
+            // Cách 3: Lấy toàn bộ main area
+            const main = document.querySelector('[role=""main""]') || document.querySelector('main');
+            if (main) {
+                const fullText = (main.innerText || '').trim();
+                if (fullText.length > 50) return fullText;
+            }
+            
+            return bestText || null;
         }");
 
-        if (!string.IsNullOrEmpty(response))
+        if (!string.IsNullOrEmpty(response) && response.Length > 20)
         {
             Log($"   📋 Response: {response.Length} chars");
             return response;
         }
 
-        return "Không thể đọc kết quả từ Gemini.";
+        // Fallback: scroll down rồi thử lại (có thể response bị ẩn do scroll)
+        Log("   ⚠️ Response ngắn, thử scroll down...");
+        await _page.EvaluateAsync("() => window.scrollTo(0, document.body.scrollHeight)");
+        await Task.Delay(2000);
+
+        var retryResponse = await _page.EvaluateAsync<string?>(@"() => {
+            const main = document.querySelector('[role=""main""]') || document.querySelector('main') || document.body;
+            return (main.innerText || '').trim();
+        }");
+
+        if (!string.IsNullOrEmpty(retryResponse) && retryResponse.Length > 50)
+        {
+            Log($"   📋 Response (retry): {retryResponse.Length} chars");
+            return retryResponse;
+        }
+
+        return response ?? "Không thể đọc kết quả từ Gemini.";
     }
 
     // ========== NEW CHAT ==========
@@ -994,15 +1036,28 @@ public class GeminiWebService : IDisposable
 
         if (string.IsNullOrWhiteSpace(answerKey))
         {
-            return $"Hãy đọc bài thi Toán trong {fileType} đã upload và chấm điểm.\n" +
-                   "Yêu cầu:\n1. Đọc từng câu và bài làm\n2. Chấm điểm từng câu\n3. Tổng điểm /10\n4. Nhận xét\n\n" +
-                   "Trả lời theo format:\nĐIỂM: [số]/10\nCHI TIẾT:\n- Câu 1: [điểm] - [nhận xét]\n- Câu 2: [điểm] - [nhận xét]\n...\nNHẬN XÉT CHUNG: [nhận xét]";
+            return "Chấm bài thi Toán trong file đã upload. " +
+                   "Đọc kỹ bài làm, chấm từng câu. " +
+                   "BẮT BUỘC trả lời ĐÚNG format sau (giữ nguyên từ khóa ĐIỂM, CHI TIẾT, NHẬN XÉT CHUNG):\n\n" +
+                   "ĐIỂM: [tổng điểm]/10\n" +
+                   "CHI TIẾT:\n" +
+                   "- Câu 1: [điểm câu này] - [đúng/sai/một phần] - [giải thích ngắn]\n" +
+                   "- Câu 2: [điểm câu này] - [đúng/sai/một phần] - [giải thích ngắn]\n" +
+                   "...\n" +
+                   "NHẬN XÉT CHUNG: [đánh giá tổng thể bài làm, 1-2 câu]";
         }
         else
         {
-            return $"Chấm bài thi Toán ({fileType} đã upload) theo ĐÁP ÁN:\n\n{answerKey}\n\n" +
-                   "Yêu cầu: So sánh với đáp án, chấm từng câu, tổng /10.\n\n" +
-                   "Format:\nĐIỂM: [số]/10\nCHI TIẾT:\n- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n...\nNHẬN XÉT CHUNG: [nhận xét]";
+            return "Chấm bài thi Toán trong file đã upload dựa trên đáp án:\n\n" +
+                   answerKey + "\n\n" +
+                   "So sánh bài làm với đáp án, chấm từng câu. " +
+                   "BẮT BUỘC trả lời ĐÚNG format sau:\n\n" +
+                   "ĐIỂM: [tổng điểm]/10\n" +
+                   "CHI TIẾT:\n" +
+                   "- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n" +
+                   "- Câu 2: [điểm] - [đúng/sai] - [nhận xét]\n" +
+                   "...\n" +
+                   "NHẬN XÉT CHUNG: [nhận xét 1-2 câu]";
         }
     }
 
@@ -1010,11 +1065,17 @@ public class GeminiWebService : IDisposable
     {
         string a = Path.GetFileName(answerFilePath);
         string e = Path.GetFileName(examFilePath);
-        string extra = string.IsNullOrWhiteSpace(additionalNotes) ? "" : $"\nGhi chú: {additionalNotes}";
+        string extra = string.IsNullOrWhiteSpace(additionalNotes) ? "" : $"\nLưu ý thêm: {additionalNotes}";
 
-        return $"Đã upload 2 file:\n- File 1 ({a}): ĐÁP ÁN\n- File 2 ({e}): BÀI LÀM học sinh\n\n" +
+        return $"Đã upload 2 file: file 1 ({a}) là ĐÁP ÁN, file 2 ({e}) là BÀI LÀM học sinh.\n" +
                "So sánh bài làm với đáp án, chấm điểm Toán.\n" +
-               "Format:\nĐIỂM: [số]/10\nCHI TIẾT:\n- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n...\nNHẬN XÉT CHUNG: [nhận xét]" + extra;
+               "BẮT BUỘC trả lời ĐÚNG format sau:\n\n" +
+               "ĐIỂM: [tổng điểm]/10\n" +
+               "CHI TIẾT:\n" +
+               "- Câu 1: [điểm] - [đúng/sai/một phần] - [nhận xét]\n" +
+               "- Câu 2: [điểm] - [đúng/sai/một phần] - [nhận xét]\n" +
+               "...\n" +
+               "NHẬN XÉT CHUNG: [nhận xét tổng thể 1-2 câu]" + extra;
     }
 
     // ========== HELPERS ==========

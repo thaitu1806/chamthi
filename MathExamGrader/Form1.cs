@@ -464,11 +464,12 @@ public partial class Form1 : Form
 
     private void ExportToCsv(string filePath)
     {
+        // Mặc định dùng UTF-8 BOM để Excel đọc đúng tiếng Việt
         var encoding = _settings.ExportConfig.CsvEncoding switch
         {
-            "UTF-8 BOM (Excel)" => new UTF8Encoding(true),
+            "UTF-8" => new UTF8Encoding(false),
             "Windows-1252" => Encoding.GetEncoding(1252),
-            _ => new UTF8Encoding(false)
+            _ => new UTF8Encoding(true) // UTF-8 BOM (Excel) - mặc định
         };
 
         var sb = new StringBuilder();
@@ -477,7 +478,10 @@ public partial class Form1 : Form
         for (int i = 0; i < _results.Count; i++)
         {
             var r = _results[i];
-            string feedback = r.Feedback.Replace("\"", "\"\"").Replace("\n", " ");
+            string feedback = r.Feedback.Replace("\"", "\"\"").Replace("\n", " ").Replace("\r", "");
+            string detail = r.DetailedResult.Replace("\"", "\"\"").Replace("\n", " ").Replace("\r", "");
+            // Giới hạn detail để CSV không quá nặng
+            if (detail.Length > 1000) detail = detail[..1000] + "...";
             sb.AppendLine($"{i + 1},\"{r.StudentName}\",\"{r.FileName}\",{r.Score:F1},\"{feedback}\",\"{r.GradedAt:dd/MM/yyyy HH:mm}\",\"{r.ExamTitle}\"");
         }
 
