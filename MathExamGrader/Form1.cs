@@ -287,6 +287,9 @@ public partial class Form1 : Form
             await _geminiService.InitializeAsync(userDataDir);
             await _geminiService.NavigateToGemini();
 
+            // Dump thông tin DOM để debug (hiển thị trong log)
+            await _geminiService.DumpPageInfoAsync();
+
             // Chấm từng bài
             string answerKey = txtAnswerKey.Text.Trim();
             string examTitle = txtExamTitle.Text.Trim();

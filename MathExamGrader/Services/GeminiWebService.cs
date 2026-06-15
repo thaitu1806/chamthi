@@ -1,6 +1,7 @@
 using Microsoft.Playwright;
 using MathExamGrader.Models;
 using System.Diagnostics;
+using System.Text.Json;
 
 namespace MathExamGrader.Services;
 
@@ -12,6 +13,13 @@ public class GeminiWebService : IDisposable
     private int _maxWaitSeconds = 120;
     private Process? _edgeProcess;
 
+    // Selectors được phát hiện tự động từ DOM thật
+    private string? _inputSelector;
+    private string? _sendButtonSelector;
+    private string? _uploadButtonSelector;
+    private string? _responseSelector;
+    private string? _newChatSelector;
+
     public event Action<string>? OnLog;
 
     public int MaxWaitSeconds
@@ -20,6 +28,8 @@ public class GeminiWebService : IDisposable
         set => _maxWaitSeconds = value;
     }
 
+    // ========== INITIALIZATION ==========
+
     public async Task InitializeAsync(string userDataDir)
     {
         _playwright = await Playwright.CreateAsync();
@@ -27,16 +37,14 @@ public class GeminiWebService : IDisposable
         string edgePath = GetEdgePath();
         int debugPort = 9222;
 
-        // Bước 1: Đóng tất cả Edge đang chạy
         Log("Đang đóng Edge hiện tại (nếu có)...");
         KillAllEdgeProcesses();
         await Task.Delay(2000);
 
-        // Bước 2: Mở Edge mới với remote debugging + profile thật
         string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
             + @"\Microsoft\Edge\User Data";
 
-        Log($"Đang mở Edge với profile: {userProfile}");
+        Log($"Đang mở Edge với profile thật...");
 
         var startInfo = new ProcessStartInfo
         {
@@ -53,7 +61,6 @@ public class GeminiWebService : IDisposable
         _edgeProcess = Process.Start(startInfo);
         Log("Đã mở Edge, đang đợi khởi động...");
 
-        // Bước 3: Retry kết nối CDP
         _browser = await ConnectWithRetryAsync(debugPort, maxRetries: 10, delayMs: 2000);
 
         var contexts = _browser.Contexts;
@@ -68,7 +75,6 @@ public class GeminiWebService : IDisposable
             _page = await context.NewPageAsync();
         }
 
-        // Set default timeout
         _page.SetDefaultTimeout(60000);
         _page.SetDefaultNavigationTimeout(60000);
 
@@ -88,12 +94,7 @@ public class GeminiWebService : IDisposable
             catch (Exception ex)
             {
                 if (i == maxRetries)
-                {
-                    throw new Exception(
-                        $"Không thể kết nối vào Edge sau {maxRetries} lần thử.\n" +
-                        $"Lỗi: {ex.Message}\n\n" +
-                        $"Hãy đóng Edge thủ công rồi thử lại.", ex);
-                }
+                    throw new Exception($"Không thể kết nối Edge sau {maxRetries} lần.\nLỗi: {ex.Message}", ex);
                 Log($"Chưa kết nối được, đợi {delayMs / 1000}s...");
                 await Task.Delay(delayMs);
             }
@@ -105,8 +106,8 @@ public class GeminiWebService : IDisposable
     {
         try
         {
-            var procs = Process.GetProcessesByName("msedge");
-            foreach (var p in procs) { try { p.Kill(); } catch { } }
+            foreach (var p in Process.GetProcessesByName("msedge"))
+            { try { p.Kill(); } catch { } }
         }
         catch { }
     }
@@ -123,7 +124,7 @@ public class GeminiWebService : IDisposable
         return "msedge.exe";
     }
 
-    // ========== NAVIGATION ==========
+    // ========== NAVIGATE & AUTO-DETECT SELECTORS ==========
 
     public async Task NavigateToGemini()
     {
@@ -149,8 +150,261 @@ public class GeminiWebService : IDisposable
             });
         }
 
-        await Task.Delay(5000);
-        Log("✅ Đã mở Gemini thành công.");
+        // Đợi page ổn định
+        await Task.Delay(6000);
+
+        // === TỰ ĐỘNG PHÂN TÍCH DOM ĐỂ LẤY SELECTOR CHÍNH XÁC ===
+        Log("🔍 Đang phân tích DOM trang Gemini...");
+        await DetectSelectorsAsync();
+
+        Log("✅ Đã mở Gemini và phân tích xong DOM.");
+    }
+
+    /// <summary>
+    /// Phân tích DOM thật của Gemini để tìm đúng selector cho từng thành phần
+    /// </summary>
+    private async Task DetectSelectorsAsync()
+    {
+        if (_page == null) return;
+
+        // 1. Tìm ô nhập prompt (input area)
+        _inputSelector = await DetectInputAsync();
+        Log($"   📝 Input: {_inputSelector ?? "KHÔNG TÌM THẤY"}");
+
+        // 2. Tìm nút gửi (send button)
+        _sendButtonSelector = await DetectSendButtonAsync();
+        Log($"   📤 Send: {_sendButtonSelector ?? "KHÔNG TÌM THẤY"}");
+
+        // 3. Tìm nút upload file
+        _uploadButtonSelector = await DetectUploadButtonAsync();
+        Log($"   📎 Upload: {_uploadButtonSelector ?? "KHÔNG TÌM THẤY"}");
+
+        // 4. Tìm selector response
+        _responseSelector = await DetectResponseAreaAsync();
+        Log($"   💬 Response: {_responseSelector ?? "(sẽ detect sau khi có response)"}");
+
+        // 5. Tìm nút New Chat
+        _newChatSelector = await DetectNewChatAsync();
+        Log($"   🔄 New Chat: {_newChatSelector ?? "KHÔNG TÌM THẤY"}");
+    }
+
+    private async Task<string?> DetectInputAsync()
+    {
+        if (_page == null) return null;
+
+        // Dùng JavaScript để tìm chính xác ô nhập trên trang Gemini
+        var result = await _page.EvaluateAsync<string?>(@"() => {
+            // Tìm tất cả contenteditable elements
+            const editables = document.querySelectorAll('[contenteditable=""true""]');
+            for (const el of editables) {
+                const rect = el.getBoundingClientRect();
+                // Ô nhập phải visible và có kích thước hợp lý
+                if (rect.width > 100 && rect.height > 20 && rect.bottom > 0) {
+                    // Tạo selector unique
+                    if (el.classList.length > 0) {
+                        // Thử dùng class
+                        for (const cls of el.classList) {
+                            if (document.querySelectorAll('.' + cls + '[contenteditable=""true""]').length === 1) {
+                                return '.' + cls + '[contenteditable=""true""]';
+                            }
+                        }
+                        return '.' + el.classList[0] + '[contenteditable=""true""]';
+                    }
+                    if (el.getAttribute('aria-label')) {
+                        return '[contenteditable=""true""][aria-label=""' + el.getAttribute('aria-label') + '""]';
+                    }
+                    if (el.getAttribute('role')) {
+                        return '[contenteditable=""true""][role=""' + el.getAttribute('role') + '""]';
+                    }
+                    return '[contenteditable=""true""]';
+                }
+            }
+            // Fallback: tìm textarea
+            const textarea = document.querySelector('textarea');
+            if (textarea) {
+                if (textarea.getAttribute('aria-label'))
+                    return 'textarea[aria-label=""' + textarea.getAttribute('aria-label') + '""]';
+                return 'textarea';
+            }
+            return null;
+        }");
+
+        return result;
+    }
+
+    private async Task<string?> DetectSendButtonAsync()
+    {
+        if (_page == null) return null;
+
+        var result = await _page.EvaluateAsync<string?>(@"() => {
+            const buttons = document.querySelectorAll('button');
+            for (const btn of buttons) {
+                const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                const tooltip = (btn.getAttribute('data-tooltip') || '').toLowerCase();
+                const matTooltip = (btn.getAttribute('mattooltip') || '').toLowerCase();
+                const allText = label + ' ' + tooltip + ' ' + matTooltip;
+                
+                if (allText.includes('send') || allText.includes('gửi') || allText.includes('submit')) {
+                    const rect = btn.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                        if (btn.getAttribute('aria-label'))
+                            return 'button[aria-label=""' + btn.getAttribute('aria-label') + '""]';
+                        if (btn.getAttribute('data-tooltip'))
+                            return 'button[data-tooltip=""' + btn.getAttribute('data-tooltip') + '""]';
+                        if (btn.getAttribute('mattooltip'))
+                            return 'button[mattooltip=""' + btn.getAttribute('mattooltip') + '""]';
+                    }
+                }
+            }
+            // Fallback: tìm button có icon send (SVG path thường có d attribute đặc trưng)
+            // hoặc button cuối cùng trong input area
+            const inputArea = document.querySelector('[contenteditable=""true""]');
+            if (inputArea) {
+                const parent = inputArea.closest('form') || inputArea.parentElement?.parentElement?.parentElement;
+                if (parent) {
+                    const btns = parent.querySelectorAll('button');
+                    const lastBtn = btns[btns.length - 1];
+                    if (lastBtn && lastBtn.getAttribute('aria-label'))
+                        return 'button[aria-label=""' + lastBtn.getAttribute('aria-label') + '""]';
+                }
+            }
+            return null;
+        }");
+
+        return result;
+    }
+
+    private async Task<string?> DetectUploadButtonAsync()
+    {
+        if (_page == null) return null;
+
+        var result = await _page.EvaluateAsync<string?>(@"() => {
+            const buttons = document.querySelectorAll('button');
+            for (const btn of buttons) {
+                const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                const tooltip = (btn.getAttribute('data-tooltip') || '').toLowerCase();
+                const matTooltip = (btn.getAttribute('mattooltip') || '').toLowerCase();
+                const allText = label + ' ' + tooltip + ' ' + matTooltip;
+                
+                if (allText.includes('upload') || allText.includes('file') || 
+                    allText.includes('attach') || allText.includes('tệp') ||
+                    allText.includes('tải') || allText.includes('add image') ||
+                    allText.includes('thêm')) {
+                    const rect = btn.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                        if (btn.getAttribute('aria-label'))
+                            return 'button[aria-label=""' + btn.getAttribute('aria-label') + '""]';
+                        if (btn.getAttribute('data-tooltip'))
+                            return 'button[data-tooltip=""' + btn.getAttribute('data-tooltip') + '""]';
+                        if (btn.getAttribute('mattooltip'))
+                            return 'button[mattooltip=""' + btn.getAttribute('mattooltip') + '""]';
+                    }
+                }
+            }
+            // Tìm input[type=file]
+            const fileInput = document.querySelector('input[type=""file""]');
+            if (fileInput) return '__FILE_INPUT__';
+            return null;
+        }");
+
+        return result;
+    }
+
+    private async Task<string?> DetectResponseAreaAsync()
+    {
+        if (_page == null) return null;
+
+        var result = await _page.EvaluateAsync<string?>(@"() => {
+            // Tìm container chứa response từ model
+            const selectors = [
+                '[data-message-author-role=""model""]',
+                '.model-response-text',
+                '.response-container',
+                '.markdown-main-panel',
+                'message-content',
+            ];
+            for (const sel of selectors) {
+                if (document.querySelector(sel)) return sel;
+            }
+            return null;
+        }");
+
+        return result;
+    }
+
+    private async Task<string?> DetectNewChatAsync()
+    {
+        if (_page == null) return null;
+
+        var result = await _page.EvaluateAsync<string?>(@"() => {
+            // Tìm link/button 'New chat'
+            const elements = document.querySelectorAll('a, button');
+            for (const el of elements) {
+                const label = (el.getAttribute('aria-label') || '').toLowerCase();
+                const text = (el.textContent || '').toLowerCase();
+                const href = (el.getAttribute('href') || '').toLowerCase();
+                
+                if (label.includes('new chat') || label.includes('cuộc trò chuyện mới') ||
+                    text.includes('new chat') || href === '/app') {
+                    if (el.getAttribute('aria-label'))
+                        return (el.tagName.toLowerCase()) + '[aria-label=""' + el.getAttribute('aria-label') + '""]';
+                    if (el.getAttribute('href'))
+                        return el.tagName.toLowerCase() + '[href=""' + el.getAttribute('href') + '""]';
+                }
+            }
+            return null;
+        }");
+
+        return result;
+    }
+
+    /// <summary>
+    /// Dump HTML của trang để debug - ghi ra log
+    /// </summary>
+    public async Task DumpPageInfoAsync()
+    {
+        if (_page == null) return;
+
+        var info = await _page.EvaluateAsync<string>(@"() => {
+            let result = '=== PAGE INFO ===\n';
+            result += 'URL: ' + window.location.href + '\n';
+            result += 'Title: ' + document.title + '\n\n';
+            
+            // Tìm tất cả contenteditable
+            const editables = document.querySelectorAll('[contenteditable=""true""]');
+            result += '--- Contenteditable elements: ' + editables.length + ' ---\n';
+            editables.forEach((el, i) => {
+                const rect = el.getBoundingClientRect();
+                result += i + ': tag=' + el.tagName + ' class=""' + el.className + '"" role=""' + (el.getAttribute('role')||'') + '"" aria=""' + (el.getAttribute('aria-label')||'') + '"" size=' + Math.round(rect.width) + 'x' + Math.round(rect.height) + '\n';
+            });
+            
+            // Tìm tất cả buttons visible
+            result += '\n--- Buttons (visible, có aria-label): ---\n';
+            const buttons = document.querySelectorAll('button');
+            let btnCount = 0;
+            buttons.forEach((btn) => {
+                const rect = btn.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0 && btn.getAttribute('aria-label')) {
+                    result += btnCount + ': aria=""' + btn.getAttribute('aria-label') + '"" tooltip=""' + (btn.getAttribute('data-tooltip')||btn.getAttribute('mattooltip')||'') + '"" size=' + Math.round(rect.width) + 'x' + Math.round(rect.height) + '\n';
+                    btnCount++;
+                }
+            });
+            
+            // Tìm input[type=file]
+            const fileInputs = document.querySelectorAll('input[type=""file""]');
+            result += '\n--- File inputs: ' + fileInputs.length + ' ---\n';
+            fileInputs.forEach((el, i) => {
+                result += i + ': accept=""' + (el.getAttribute('accept')||'') + '"" hidden=' + el.hidden + ' class=""' + el.className + '""\n';
+            });
+            
+            return result;
+        }");
+
+        // Log từng dòng
+        foreach (var line in info.Split('\n'))
+        {
+            Log(line);
+        }
     }
 
     // ========== GRADING ==========
@@ -163,18 +417,14 @@ public class GeminiWebService : IDisposable
         {
             string prompt = BuildGradingPrompt(answerKey, filePath);
 
-            // Upload file
             await UploadFileAsync(filePath);
             await Task.Delay(3000);
 
-            // Nhập prompt
             await TypePromptAsync(prompt);
             await Task.Delay(1000);
 
-            // Gửi
             await SubmitAndWaitAsync();
 
-            // Lấy kết quả
             string result = await GetLatestResponseAsync();
             Log($"✅ Đã chấm xong: {Path.GetFileName(filePath)}");
             return result;
@@ -192,22 +442,18 @@ public class GeminiWebService : IDisposable
 
         try
         {
-            // Upload đáp án
             await UploadFileAsync(answerFilePath);
             await Task.Delay(2000);
             Log($"📄 Đã upload đáp án: {Path.GetFileName(answerFilePath)}");
 
-            // Upload bài thi
             await UploadFileAsync(examFilePath);
             await Task.Delay(2000);
             Log($"📄 Đã upload bài thi: {Path.GetFileName(examFilePath)}");
 
-            // Prompt
             string prompt = BuildGradingPromptWithFile(answerFilePath, examFilePath, additionalNotes);
             await TypePromptAsync(prompt);
             await Task.Delay(1000);
 
-            // Gửi
             await SubmitAndWaitAsync();
 
             string result = await GetLatestResponseAsync();
@@ -222,190 +468,187 @@ public class GeminiWebService : IDisposable
     }
 
     // ========== UPLOAD FILE ==========
-    // Gemini dùng hidden <input type="file">, cần dùng FileChooser event
 
     private async Task UploadFileAsync(string filePath)
     {
         if (_page == null) return;
 
-        // Cách 1: Dùng FileChooser event (chuẩn nhất cho hidden input)
-        // Click nút "Add file" / "Upload" để trigger file dialog
-        var addFileButton = await FindUploadButtonAsync();
-
-        if (addFileButton != null)
+        // Nếu phát hiện có input[type=file] trực tiếp
+        if (_uploadButtonSelector == "__FILE_INPUT__")
         {
-            // Lắng nghe FileChooser event khi click nút upload
-            var fileChooser = await _page.RunAndWaitForFileChooserAsync(async () =>
-            {
-                await addFileButton.ClickAsync();
-            });
-
-            await fileChooser.SetFilesAsync(filePath);
-            
-            Log($"📎 Upload (FileChooser): {Path.GetFileName(filePath)}");
-            await Task.Delay(3000);
-            return;
-        }
-
-        // Cách 2: Fallback - tìm input[type=file] trực tiếp (kể cả hidden)
-        var fileInput = _page.Locator("input[type='file']").First;
-        if (await fileInput.CountAsync() > 0)
-        {
+            var fileInput = _page.Locator("input[type='file']").First;
             await fileInput.SetInputFilesAsync(filePath);
-            Log($"📎 Upload (input): {Path.GetFileName(filePath)}");
+            Log($"📎 Upload (direct input): {Path.GetFileName(filePath)}");
             await Task.Delay(3000);
             return;
         }
 
-        throw new Exception("Không tìm thấy nút upload file trên trang Gemini.");
-    }
-
-    private async Task<ILocator?> FindUploadButtonAsync()
-    {
-        if (_page == null) return null;
-
-        // Danh sách selector cho nút upload trên Gemini (thử từng cái)
-        string[] selectors = {
-            // Nút "Add file" hoặc icon attachment (thường là nút + hoặc icon paperclip)
-            "button[aria-label='Upload file']",
-            "button[aria-label='Add file']",
-            "button[aria-label='Tải tệp lên']",
-            "button[aria-label='Thêm tệp']",
-            "button[aria-label='Attach file']",
-            "button[aria-label='Upload']",
-            // Selector dựa trên tooltip
-            "[data-tooltip='Upload file']",
-            "[data-tooltip='Add file']",
-            // Selector dựa trên mat-icon hoặc icon class
-            "button:has(mat-icon:text('attach_file'))",
-            "button:has(mat-icon:text('add'))",
-            // Nút có icon upload trong input area
-            ".input-area-container button[mattooltip]",
-            ".chat-input button[aria-label*='file']",
-            ".chat-input button[aria-label*='File']",
-            // Gemini thường có nút "+" bên cạnh input
-            "button[aria-label*='Add']",
-            "button[aria-label*='Thêm']",
-        };
-
-        foreach (var selector in selectors)
+        // Dùng nút upload đã detect
+        if (!string.IsNullOrEmpty(_uploadButtonSelector))
         {
             try
             {
-                var btn = _page.Locator(selector).First;
-                if (await btn.CountAsync() > 0 && await btn.IsVisibleAsync())
+                var uploadBtn = _page.Locator(_uploadButtonSelector).First;
+                
+                // Dùng FileChooser pattern
+                var fileChooser = await _page.RunAndWaitForFileChooserAsync(async () =>
                 {
-                    Log($"   Tìm thấy nút upload: {selector}");
-                    return btn;
-                }
+                    await uploadBtn.ClickAsync();
+                });
+                await fileChooser.SetFilesAsync(filePath);
+                Log($"📎 Upload (detected button): {Path.GetFileName(filePath)}");
+                await Task.Delay(3000);
+                return;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log($"   ⚠️ Lỗi với detected selector: {ex.Message}");
+            }
         }
 
-        // Fallback: tìm tất cả button, check aria-label chứa từ khóa
-        var allButtons = await _page.Locator("button").AllAsync();
-        foreach (var btn in allButtons)
-        {
-            try
-            {
-                var label = await btn.GetAttributeAsync("aria-label") ?? "";
-                var tooltip = await btn.GetAttributeAsync("data-tooltip") ?? "";
-                var matTooltip = await btn.GetAttributeAsync("mattooltip") ?? "";
-                var combined = $"{label} {tooltip} {matTooltip}".ToLower();
-
-                if (combined.Contains("upload") || combined.Contains("file") ||
-                    combined.Contains("attach") || combined.Contains("tệp") ||
-                    combined.Contains("tải"))
-                {
-                    if (await btn.IsVisibleAsync())
-                    {
-                        Log($"   Tìm thấy nút upload (scan): aria-label='{label}'");
-                        return _page.Locator($"button[aria-label='{label}']").First;
+        // Fallback: thử tìm lại nút upload bằng JS realtime
+        Log("   🔍 Đang tìm lại nút upload...");
+        var uploadSel = await _page.EvaluateAsync<string?>(@"() => {
+            // Tìm button có icon/label liên quan upload
+            const btns = document.querySelectorAll('button');
+            for (const btn of btns) {
+                const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                const tooltip = (btn.getAttribute('data-tooltip') || btn.getAttribute('mattooltip') || '').toLowerCase();
+                const combined = label + ' ' + tooltip;
+                if (combined.includes('upload') || combined.includes('file') || 
+                    combined.includes('attach') || combined.includes('image') ||
+                    combined.includes('tệp') || combined.includes('hình')) {
+                    const rect = btn.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                        if (btn.getAttribute('aria-label'))
+                            return 'button[aria-label=""' + btn.getAttribute('aria-label') + '""]';
                     }
                 }
             }
-            catch { }
+            return null;
+        }");
+
+        if (!string.IsNullOrEmpty(uploadSel))
+        {
+            var btn = _page.Locator(uploadSel).First;
+            var fileChooser = await _page.RunAndWaitForFileChooserAsync(async () =>
+            {
+                await btn.ClickAsync();
+            });
+            await fileChooser.SetFilesAsync(filePath);
+            Log($"📎 Upload (realtime detect): {Path.GetFileName(filePath)}");
+            await Task.Delay(3000);
+            return;
         }
 
-        return null;
+        // Fallback cuối: tìm input[type=file] ẩn và set trực tiếp
+        var hiddenInput = _page.Locator("input[type='file']").First;
+        if (await hiddenInput.CountAsync() > 0)
+        {
+            await hiddenInput.SetInputFilesAsync(filePath);
+            Log($"📎 Upload (hidden input): {Path.GetFileName(filePath)}");
+            await Task.Delay(3000);
+            return;
+        }
+
+        // Dump info để debug
+        await DumpPageInfoAsync();
+        throw new Exception("Không tìm thấy cách upload file. Xem log để biết DOM hiện tại.");
     }
 
     // ========== TYPE PROMPT ==========
-    // Gemini dùng Quill editor với class .ql-editor (contenteditable div)
 
     private async Task TypePromptAsync(string prompt)
     {
         if (_page == null) return;
 
-        // Selectors cho ô nhập prompt trên Gemini
-        string[] inputSelectors = {
-            // Quill editor (Gemini hiện tại dùng Quill)
-            ".ql-editor",
-            "div.ql-editor[contenteditable='true']",
-            // ContentEditable div
-            "[contenteditable='true'][aria-label*='prompt']",
-            "[contenteditable='true'][aria-label*='Enter']",
-            "[contenteditable='true'][aria-label*='Nhập']",
-            "div[contenteditable='true'][role='textbox']",
-            // ProseMirror (dự phòng nếu Google đổi editor)
-            ".ProseMirror",
-            // Textarea fallback
-            "textarea[aria-label*='prompt']",
-            "textarea[placeholder]",
-            // Generic contenteditable trong input area
-            ".input-area [contenteditable='true']",
-            ".chat-input [contenteditable='true']",
-            "[contenteditable='true']",
-        };
-
         ILocator? inputElement = null;
 
-        foreach (var selector in inputSelectors)
+        // Dùng selector đã detect
+        if (!string.IsNullOrEmpty(_inputSelector))
         {
-            try
+            var el = _page.Locator(_inputSelector).First;
+            if (await el.CountAsync() > 0 && await el.IsVisibleAsync())
             {
-                var el = _page.Locator(selector).First;
-                if (await el.CountAsync() > 0 && await el.IsVisibleAsync())
-                {
-                    inputElement = el;
-                    Log($"   Tìm thấy ô nhập: {selector}");
-                    break;
-                }
+                inputElement = el;
             }
-            catch { }
+        }
+
+        // Nếu không tìm thấy, detect lại realtime
+        if (inputElement == null)
+        {
+            Log("   🔍 Tìm lại ô nhập...");
+            var sel = await _page.EvaluateAsync<string?>(@"() => {
+                const editables = document.querySelectorAll('[contenteditable=""true""]');
+                for (const el of editables) {
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width > 100 && rect.height > 20 && rect.bottom > 0 &&
+                        getComputedStyle(el).display !== 'none') {
+                        if (el.classList.length > 0) return '.' + el.classList[0];
+                        return '[contenteditable=""true""]';
+                    }
+                }
+                const ta = document.querySelector('textarea');
+                if (ta) return 'textarea';
+                return null;
+            }");
+
+            if (!string.IsNullOrEmpty(sel))
+            {
+                inputElement = _page.Locator(sel).First;
+                _inputSelector = sel; // Cập nhật cache
+            }
         }
 
         if (inputElement == null)
         {
-            throw new Exception("Không tìm thấy ô nhập prompt trên trang Gemini.");
+            await DumpPageInfoAsync();
+            throw new Exception("Không tìm thấy ô nhập prompt.");
         }
 
-        // Focus vào ô nhập
+        // Click focus
         await inputElement.ClickAsync();
         await Task.Delay(300);
 
-        // Clear nội dung cũ (nếu có)
+        // Clear
         await _page.Keyboard.PressAsync("Control+a");
-        await Task.Delay(100);
+        await _page.Keyboard.PressAsync("Backspace");
+        await Task.Delay(200);
 
-        // Dùng clipboard để paste prompt (tránh vấn đề với special characters và xuống dòng)
-        await _page.EvaluateAsync($"navigator.clipboard.writeText({System.Text.Json.JsonSerializer.Serialize(prompt)})");
-        await _page.Keyboard.PressAsync("Control+v");
+        // Paste prompt qua clipboard (tốt nhất cho rich editor)
+        await _page.EvaluateAsync(@"(text) => {
+            const el = document.activeElement;
+            if (el && el.getAttribute('contenteditable') === 'true') {
+                el.innerHTML = '<p>' + text.replace(/\n/g, '</p><p>') + '</p>';
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        }", prompt);
+
         await Task.Delay(500);
 
-        // Nếu paste không hoạt động, fallback dùng type
+        // Verify prompt đã được nhập
         var currentText = await inputElement.InnerTextAsync();
         if (string.IsNullOrWhiteSpace(currentText))
         {
-            Log("   Paste không hoạt động, dùng keyboard type...");
-            await inputElement.FillAsync(prompt);
-            await Task.Delay(300);
-            
-            // Nếu Fill cũng không hoạt động
+            // Fallback: dùng keyboard
+            Log("   ⚠️ innerHTML không hoạt động, thử clipboard paste...");
+            await inputElement.ClickAsync();
+            await _page.Keyboard.PressAsync("Control+a");
+            await _page.Keyboard.PressAsync("Backspace");
+
+            // Copy to clipboard and paste
+            await _page.EvaluateAsync("(text) => navigator.clipboard.writeText(text)", prompt);
+            await Task.Delay(200);
+            await _page.Keyboard.PressAsync("Control+v");
+            await Task.Delay(500);
+
             currentText = await inputElement.InnerTextAsync();
             if (string.IsNullOrWhiteSpace(currentText))
             {
-                await inputElement.PressSequentiallyAsync(prompt, new LocatorPressSequentiallyOptions { Delay = 5 });
+                // Final fallback: FillAsync
+                Log("   ⚠️ Clipboard không hoạt động, thử Fill...");
+                try { await inputElement.FillAsync(prompt); }
+                catch { await inputElement.PressSequentiallyAsync(prompt.Substring(0, Math.Min(200, prompt.Length))); }
             }
         }
 
@@ -418,123 +661,95 @@ public class GeminiWebService : IDisposable
     {
         if (_page == null) return;
 
-        // Tìm nút Send/Gửi
-        string[] sendSelectors = {
-            "button[aria-label='Send message']",
-            "button[aria-label='Send']",
-            "button[aria-label='Gửi']",
-            "button[aria-label='Submit']",
-            "[data-tooltip='Send message']",
-            "button[mattooltip='Send message']",
-            "button[mattooltip='Gửi']",
-            // Icon send (material icon)
-            "button:has(mat-icon:text('send'))",
-            // Selector chung
-            ".send-button",
-            "button.send-button",
-        };
-
-        ILocator? sendButton = null;
-
-        foreach (var selector in sendSelectors)
+        // Dùng selector đã detect
+        if (!string.IsNullOrEmpty(_sendButtonSelector))
         {
             try
             {
-                var btn = _page.Locator(selector).First;
-                if (await btn.CountAsync() > 0 && await btn.IsVisibleAsync())
+                var btn = _page.Locator(_sendButtonSelector).First;
+                if (await btn.CountAsync() > 0 && await btn.IsEnabledAsync())
                 {
-                    sendButton = btn;
-                    Log($"   Tìm thấy nút Gửi: {selector}");
-                    break;
+                    await btn.ClickAsync();
+                    Log("⏳ Đã gửi (detected button)...");
+                    await WaitForResponseCompleteAsync();
+                    return;
                 }
             }
             catch { }
         }
 
-        // Fallback: tìm nút gửi bằng cách scan tất cả button
-        if (sendButton == null)
-        {
-            var allBtns = await _page.Locator("button").AllAsync();
-            foreach (var btn in allBtns)
-            {
-                try
-                {
-                    var label = await btn.GetAttributeAsync("aria-label") ?? "";
-                    if (label.ToLower().Contains("send") || label.ToLower().Contains("gửi") ||
-                        label.ToLower().Contains("submit"))
-                    {
-                        if (await btn.IsVisibleAsync() && await btn.IsEnabledAsync())
-                        {
-                            sendButton = btn;
-                            Log($"   Tìm thấy nút Gửi (scan): {label}");
-                            break;
-                        }
+        // Detect lại realtime
+        var sendSel = await _page.EvaluateAsync<string?>(@"() => {
+            const btns = document.querySelectorAll('button');
+            for (const btn of btns) {
+                const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                const tooltip = (btn.getAttribute('data-tooltip') || btn.getAttribute('mattooltip') || '').toLowerCase();
+                const combined = label + ' ' + tooltip;
+                if (combined.includes('send') || combined.includes('gửi') || combined.includes('submit')) {
+                    const rect = btn.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0 && !btn.disabled) {
+                        if (btn.getAttribute('aria-label'))
+                            return 'button[aria-label=""' + btn.getAttribute('aria-label') + '""]';
                     }
                 }
-                catch { }
             }
-        }
+            return null;
+        }");
 
-        // Fallback cuối: dùng Enter
-        if (sendButton == null)
+        if (!string.IsNullOrEmpty(sendSel))
         {
-            Log("   Không tìm thấy nút Gửi, dùng Enter...");
-            await _page.Keyboard.PressAsync("Enter");
+            var btn = _page.Locator(sendSel).First;
+            await btn.ClickAsync();
+            _sendButtonSelector = sendSel;
+            Log("⏳ Đã gửi (realtime detect)...");
         }
         else
         {
-            await sendButton.ClickAsync();
+            // Fallback: Enter
+            Log("⏳ Dùng Enter để gửi...");
+            await _page.Keyboard.PressAsync("Enter");
         }
 
-        Log("⏳ Đã gửi, đang đợi Gemini trả lời...");
+        await WaitForResponseCompleteAsync();
+    }
 
-        // Đợi Gemini bắt đầu generate (xuất hiện nút Stop hoặc loading indicator)
-        await Task.Delay(3000);
+    private async Task WaitForResponseCompleteAsync()
+    {
+        if (_page == null) return;
 
-        // Đợi cho đến khi Gemini ngừng generate
+        await Task.Delay(4000); // Đợi Gemini bắt đầu
+
         int maxWait = _maxWaitSeconds;
         for (int i = 0; i < maxWait; i++)
         {
             await Task.Delay(1000);
 
-            // Kiểm tra nút Stop/Dừng (nếu còn hiện = đang generate)
-            bool stillGenerating = false;
-            string[] stopSelectors = {
-                "button[aria-label='Stop']",
-                "button[aria-label='Dừng']",
-                "button[aria-label='Stop generating']",
-                "button[mattooltip='Stop']",
-                "button[mattooltip='Dừng']",
-                ".loading-indicator",
-                "[aria-label*='loading']",
-            };
-
-            foreach (var sel in stopSelectors)
-            {
-                try
-                {
-                    var stopBtn = _page.Locator(sel).First;
-                    if (await stopBtn.CountAsync() > 0 && await stopBtn.IsVisibleAsync())
-                    {
-                        stillGenerating = true;
-                        break;
+            // Check xem Gemini còn đang generate không (bằng JS)
+            var isGenerating = await _page.EvaluateAsync<bool>(@"() => {
+                // Tìm nút Stop hoặc indicator loading
+                const btns = document.querySelectorAll('button');
+                for (const btn of btns) {
+                    const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                    if ((label.includes('stop') || label.includes('dừng')) &&
+                        btn.getBoundingClientRect().width > 0) {
+                        return true;
                     }
                 }
-                catch { }
-            }
+                // Check loading spinner/indicator
+                const loaders = document.querySelectorAll('[class*=""loading""], [class*=""generating""], [class*=""typing""]');
+                for (const l of loaders) {
+                    if (l.getBoundingClientRect().width > 0) return true;
+                }
+                return false;
+            }");
 
-            if (!stillGenerating)
+            if (!isGenerating)
             {
-                // Đợi thêm 2s cho chắc (tránh false positive)
-                await Task.Delay(2000);
+                await Task.Delay(2000); // Buffer
                 break;
             }
 
-            // Log progress mỗi 15 giây
-            if (i > 0 && i % 15 == 0)
-            {
-                Log($"   Vẫn đang đợi... ({i}s)");
-            }
+            if (i > 0 && i % 15 == 0) Log($"   Vẫn đang đợi... ({i}s)");
         }
 
         Log("   ✅ Gemini đã trả lời xong.");
@@ -546,62 +761,50 @@ public class GeminiWebService : IDisposable
     {
         if (_page == null) return "Không lấy được kết quả.";
 
-        // Selectors cho response message từ Gemini
-        string[] responseSelectors = {
-            // Model response containers
-            "[data-message-author-role='model']",
-            ".model-response-text",
-            ".response-container .markdown",
-            ".markdown-main-panel",
-            // Message bubble từ AI
-            ".message-content[data-author='model']",
-            ".conversation-turn .model-response",
-            // Gemini specific
-            "message-content.model-response-text",
-            ".response-content",
-            // Fallback - bất kỳ div nào có class chứa 'response' hoặc 'answer'
-            "[class*='response'][class*='text']",
-            "[class*='message'][class*='model']",
-        };
-
-        foreach (var selector in responseSelectors)
-        {
-            try
-            {
-                var elements = await _page.Locator(selector).AllAsync();
-                if (elements.Count > 0)
-                {
-                    // Lấy phần tử cuối cùng (response mới nhất)
-                    var lastElement = elements[^1];
-                    var text = await lastElement.InnerTextAsync();
-                    if (!string.IsNullOrWhiteSpace(text) && text.Length > 10)
-                    {
-                        Log($"   Lấy response từ: {selector} ({text.Length} chars)");
-                        return text;
-                    }
+        // Dùng JS để lấy response mới nhất
+        var response = await _page.EvaluateAsync<string?>(@"() => {
+            // Thử nhiều selector
+            const selectors = [
+                '[data-message-author-role=""model""]',
+                '.model-response-text',
+                '.markdown-main-panel', 
+                '.response-container',
+                'message-content.model-response-text',
+                '[class*=""response""][class*=""text""]',
+                '[class*=""model""][class*=""response""]',
+            ];
+            
+            for (const sel of selectors) {
+                const elements = document.querySelectorAll(sel);
+                if (elements.length > 0) {
+                    const last = elements[elements.length - 1];
+                    const text = last.innerText || last.textContent;
+                    if (text && text.trim().length > 10) return text.trim();
                 }
             }
-            catch { }
-        }
 
-        // Fallback: lấy tất cả text trong main content area
-        try
-        {
-            var mainContent = _page.Locator("[role='main']")
-                .Or(_page.Locator("main"))
-                .Or(_page.Locator(".conversation-container")).First;
-            
-            var fullText = await mainContent.InnerTextAsync();
-            if (!string.IsNullOrWhiteSpace(fullText))
-            {
-                // Cố gắng tách phần response cuối cùng
-                Log($"   Lấy response từ main content ({fullText.Length} chars)");
-                return fullText;
+            // Fallback: tìm tất cả message turns và lấy cái cuối cùng từ model
+            const allTurns = document.querySelectorAll('[class*=""turn""], [class*=""message""]');
+            if (allTurns.length > 0) {
+                const last = allTurns[allTurns.length - 1];
+                const text = last.innerText || last.textContent;
+                if (text && text.trim().length > 20) return text.trim();
             }
-        }
-        catch { }
 
-        return "Không thể đọc kết quả từ Gemini. Vui lòng kiểm tra trang web.";
+            // Final fallback: lấy main content
+            const main = document.querySelector('[role=""main""]') || document.querySelector('main');
+            if (main) return main.innerText;
+            
+            return null;
+        }");
+
+        if (!string.IsNullOrEmpty(response))
+        {
+            Log($"   📋 Response: {response.Length} chars");
+            return response;
+        }
+
+        return "Không thể đọc kết quả từ Gemini.";
     }
 
     // ========== NEW CHAT ==========
@@ -610,21 +813,11 @@ public class GeminiWebService : IDisposable
     {
         if (_page == null) return;
 
-        string[] newChatSelectors = {
-            "a[aria-label='New chat']",
-            "a[aria-label='Cuộc trò chuyện mới']",
-            "button[aria-label='New chat']",
-            "button[aria-label='Cuộc trò chuyện mới']",
-            "[data-tooltip='New chat']",
-            "[mattooltip='New chat']",
-            "a[href='/app']",
-        };
-
-        foreach (var selector in newChatSelectors)
+        if (!string.IsNullOrEmpty(_newChatSelector))
         {
             try
             {
-                var btn = _page.Locator(selector).First;
+                var btn = _page.Locator(_newChatSelector).First;
                 if (await btn.CountAsync() > 0 && await btn.IsVisibleAsync())
                 {
                     await btn.ClickAsync();
@@ -636,15 +829,15 @@ public class GeminiWebService : IDisposable
             catch { }
         }
 
-        // Fallback: navigate lại trang
-        Log("   Không tìm thấy nút New Chat, reload trang...");
+        // Fallback: reload page
+        Log("   Reload trang Gemini...");
         await _page.GotoAsync("https://gemini.google.com/app", new PageGotoOptions
         {
             Timeout = 60000,
             WaitUntil = WaitUntilState.DOMContentLoaded
         });
         await Task.Delay(5000);
-        Log("🔄 Đã reload trang Gemini.");
+        Log("🔄 Đã reload Gemini.");
     }
 
     // ========== PROMPT BUILDERS ==========
@@ -662,70 +855,27 @@ public class GeminiWebService : IDisposable
 
         if (string.IsNullOrWhiteSpace(answerKey))
         {
-            return $@"Hãy đọc bài thi Toán trong {fileType} đã upload và chấm điểm.
-Yêu cầu:
-1. Đọc từng câu hỏi và bài làm của học sinh
-2. Chấm điểm từng câu (đúng/sai/đúng một phần)
-3. Tổng điểm trên thang 10
-4. Nhận xét ngắn gọn
-
-Trả lời theo format:
-ĐIỂM: [số]/10
-CHI TIẾT:
-- Câu 1: [điểm] - [nhận xét]
-- Câu 2: [điểm] - [nhận xét]
-...
-NHẬN XÉT CHUNG: [nhận xét tổng thể]";
+            return $"Hãy đọc bài thi Toán trong {fileType} đã upload và chấm điểm.\n" +
+                   "Yêu cầu:\n1. Đọc từng câu và bài làm\n2. Chấm điểm từng câu\n3. Tổng điểm /10\n4. Nhận xét\n\n" +
+                   "Trả lời theo format:\nĐIỂM: [số]/10\nCHI TIẾT:\n- Câu 1: [điểm] - [nhận xét]\n- Câu 2: [điểm] - [nhận xét]\n...\nNHẬN XÉT CHUNG: [nhận xét]";
         }
         else
         {
-            return $@"Hãy chấm bài thi Toán trong {fileType} đã upload dựa trên ĐÁP ÁN sau:
-
-=== ĐÁP ÁN ===
-{answerKey}
-=== HẾT ĐÁP ÁN ===
-
-Yêu cầu:
-1. So sánh bài làm với đáp án
-2. Chấm điểm từng câu
-3. Tổng điểm trên thang 10
-
-Trả lời theo format:
-ĐIỂM: [số]/10
-CHI TIẾT:
-- Câu 1: [điểm] - [đúng/sai] - [nhận xét]
-- Câu 2: [điểm] - [đúng/sai] - [nhận xét]
-...
-NHẬN XÉT CHUNG: [nhận xét tổng thể]";
+            return $"Chấm bài thi Toán ({fileType} đã upload) theo ĐÁP ÁN:\n\n{answerKey}\n\n" +
+                   "Yêu cầu: So sánh với đáp án, chấm từng câu, tổng /10.\n\n" +
+                   "Format:\nĐIỂM: [số]/10\nCHI TIẾT:\n- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n...\nNHẬN XÉT CHUNG: [nhận xét]";
         }
     }
 
     private string BuildGradingPromptWithFile(string answerFilePath, string examFilePath, string additionalNotes)
     {
-        string answerFileName = Path.GetFileName(answerFilePath);
-        string examFileName = Path.GetFileName(examFilePath);
+        string a = Path.GetFileName(answerFilePath);
+        string e = Path.GetFileName(examFilePath);
+        string extra = string.IsNullOrWhiteSpace(additionalNotes) ? "" : $"\nGhi chú: {additionalNotes}";
 
-        string extra = string.IsNullOrWhiteSpace(additionalNotes)
-            ? "" : $"\n\nGhi chú thêm:\n{additionalNotes}";
-
-        return $@"Tôi đã upload 2 file:
-- File 1 ({answerFileName}): ĐÁP ÁN
-- File 2 ({examFileName}): BÀI LÀM của học sinh
-
-Hãy so sánh bài làm với đáp án và chấm điểm Toán.
-Yêu cầu:
-1. Đọc đáp án từ file 1
-2. Đọc bài làm từ file 2
-3. So sánh từng câu, chấm điểm
-4. Tổng điểm trên thang 10
-
-Trả lời theo format:
-ĐIỂM: [số]/10
-CHI TIẾT:
-- Câu 1: [điểm] - [đúng/sai/một phần] - [nhận xét]
-- Câu 2: [điểm] - [đúng/sai/một phần] - [nhận xét]
-...
-NHẬN XÉT CHUNG: [nhận xét tổng thể]{extra}";
+        return $"Đã upload 2 file:\n- File 1 ({a}): ĐÁP ÁN\n- File 2 ({e}): BÀI LÀM học sinh\n\n" +
+               "So sánh bài làm với đáp án, chấm điểm Toán.\n" +
+               "Format:\nĐIỂM: [số]/10\nCHI TIẾT:\n- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n...\nNHẬN XÉT CHUNG: [nhận xét]" + extra;
     }
 
     // ========== HELPERS ==========
