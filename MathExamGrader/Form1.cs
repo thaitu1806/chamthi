@@ -315,6 +315,17 @@ public partial class Form1 : Form
 
             int delay = _settings.GeminiConfig.DelayBetweenStudents;
 
+            // === LOGIC MỚI: 1 CHAT DUY NHẤT ===
+            // Bước 1: Gửi đáp án trước để Gemini ghi nhớ context
+            if (hasAnswerFile || !string.IsNullOrEmpty(answerKey))
+            {
+                Log("📋 Bước 1: Gửi đáp án cho Gemini ghi nhớ...");
+                await _geminiService.SendAnswerKeyAsync(_answerKeyFilePath, answerKey);
+                Log("✅ Gemini đã nhận đáp án. Bắt đầu chấm từng bài...");
+                await Task.Delay(3000);
+            }
+
+            // Bước 2: Chấm từng bài trong CÙNG CHAT (Gemini nhớ đáp án)
             for (int i = 0; i < _examFiles.Count; i++)
             {
                 if (_cts.Token.IsCancellationRequested) break;
@@ -328,29 +339,15 @@ public partial class Form1 : Form
                     progressBar.Value = i;
                 });
 
-                Log($"--- Bắt đầu chấm bài {i + 1}/{_examFiles.Count}: {fileName} ---");
+                Log($"--- Chấm bài {i + 1}/{_examFiles.Count}: {fileName} ---");
 
-                // Tạo chat mới cho mỗi bài
-                if (i > 0)
-                {
-                    await _geminiService.StartNewChatAsync();
-                }
-
-                // Gửi bài cho Gemini chấm
-                string response;
-                if (hasAnswerFile)
-                {
-                    response = await _geminiService.GradeExamWithAnswerFileAsync(
-                        file, _answerKeyFilePath!, answerKey);
-                }
-                else
-                {
-                    response = await _geminiService.GradeExamAsync(file, answerKey);
-                }
+                // Upload bài HS và yêu cầu chấm (Gemini đã có context đáp án)
+                bool hasAnswer = hasAnswerFile || !string.IsNullOrEmpty(answerKey);
+                string response = await _geminiService.GradeStudentExamAsync(file, hasAnswer, i + 1);
 
                 // Parse kết quả
                 var result = _parserService.ParseResult(response, fileName, examTitle);
-                result.HasAnswerKey = !string.IsNullOrEmpty(answerKey);
+                result.HasAnswerKey = hasAnswer;
                 _results.Add(result);
 
                 // Hiển thị kết quả

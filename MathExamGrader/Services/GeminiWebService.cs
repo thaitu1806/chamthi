@@ -407,64 +407,105 @@ public class GeminiWebService : IDisposable
         }
     }
 
-    // ========== GRADING ==========
+    // ========== GRADING (LOGIC MỚI: 1 CHAT SESSION) ==========
 
-    public async Task<string> GradeExamAsync(string filePath, string answerKey)
+    /// <summary>
+    /// Bước 1: Gửi đáp án cho Gemini ghi nhớ (tin nhắn đầu tiên trong chat)
+    /// </summary>
+    public async Task SendAnswerKeyAsync(string? answerFilePath, string answerText)
+    {
+        if (_page == null) throw new InvalidOperationException("Browser chưa được khởi tạo.");
+
+        // Upload file đáp án nếu có
+        if (!string.IsNullOrEmpty(answerFilePath) && File.Exists(answerFilePath))
+        {
+            await UploadFileAsync(answerFilePath);
+            await Task.Delay(2000);
+        }
+
+        // Gửi prompt yêu cầu Gemini ghi nhớ đáp án
+        string prompt;
+        if (!string.IsNullOrEmpty(answerFilePath) && !string.IsNullOrEmpty(answerText))
+        {
+            prompt = "Đây là ĐÁP ÁN bài thi Toán (file đã upload + text bổ sung bên dưới). " +
+                     "Hãy ghi nhớ đáp án này. Tôi sẽ gửi từng bài làm của học sinh để bạn chấm điểm.\n\n" +
+                     "Đáp án bổ sung:\n" + answerText;
+        }
+        else if (!string.IsNullOrEmpty(answerFilePath))
+        {
+            prompt = "Đây là ĐÁP ÁN bài thi Toán (file đã upload). " +
+                     "Hãy ghi nhớ đáp án này. Tôi sẽ gửi từng bài làm của học sinh để bạn chấm điểm theo đáp án này.";
+        }
+        else
+        {
+            prompt = "Đây là ĐÁP ÁN bài thi Toán. Ghi nhớ để chấm bài:\n\n" + answerText +
+                     "\n\nTôi sẽ gửi từng bài làm của học sinh để bạn chấm điểm theo đáp án trên.";
+        }
+
+        await TypePromptAsync(prompt);
+        await Task.Delay(1000);
+        await SubmitAndWaitAsync();
+
+        // Không cần lấy response, chỉ cần Gemini xác nhận đã hiểu
+        Log("   ✅ Gemini đã nhận đáp án.");
+    }
+
+    /// <summary>
+    /// Bước 2: Gửi từng bài HS để chấm (trong cùng chat, Gemini đã nhớ đáp án)
+    /// </summary>
+    public async Task<string> GradeStudentExamAsync(string examFilePath, bool hasAnswerKey, int studentNumber)
     {
         if (_page == null) throw new InvalidOperationException("Browser chưa được khởi tạo.");
 
         try
         {
-            string prompt = BuildGradingPrompt(answerKey, filePath);
+            // Upload bài HS
+            await UploadFileAsync(examFilePath);
+            await Task.Delay(2000);
 
-            await UploadFileAsync(filePath);
-            await Task.Delay(3000);
+            // Prompt ngắn gọn (Gemini đã có context đáp án)
+            string prompt;
+            if (hasAnswerKey)
+            {
+                prompt = $"Chấm bài học sinh #{studentNumber} (file vừa upload). " +
+                         "So sánh với đáp án đã cho ở trên. " +
+                         "Trả lời ĐÚNG format:\n\n" +
+                         "ĐIỂM: [tổng]/10\nCHI TIẾT:\n- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n...\nNHẬN XÉT CHUNG: [1-2 câu]";
+            }
+            else
+            {
+                prompt = $"Đọc và chấm bài thi Toán học sinh #{studentNumber} (file vừa upload). " +
+                         "Tự đánh giá bài làm. " +
+                         "Trả lời ĐÚNG format:\n\n" +
+                         "ĐIỂM: [tổng]/10\nCHI TIẾT:\n- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n...\nNHẬN XÉT CHUNG: [1-2 câu]";
+            }
 
             await TypePromptAsync(prompt);
             await Task.Delay(1000);
-
             await SubmitAndWaitAsync();
 
             string result = await GetLatestResponseAsync();
-            Log($"✅ Đã chấm xong: {Path.GetFileName(filePath)}");
+            Log($"✅ Đã chấm xong bài #{studentNumber}: {Path.GetFileName(examFilePath)}");
             return result;
         }
         catch (Exception ex)
         {
-            Log($"❌ Lỗi khi chấm {Path.GetFileName(filePath)}: {ex.Message}");
+            Log($"❌ Lỗi bài #{studentNumber}: {ex.Message}");
             return $"LỖI: {ex.Message}";
         }
     }
 
+    // Giữ lại methods cũ cho backward compatibility
+    public async Task<string> GradeExamAsync(string filePath, string answerKey)
+    {
+        return await GradeStudentExamAsync(filePath, !string.IsNullOrEmpty(answerKey), 1);
+    }
+
     public async Task<string> GradeExamWithAnswerFileAsync(string examFilePath, string answerFilePath, string additionalNotes)
     {
-        if (_page == null) throw new InvalidOperationException("Browser chưa được khởi tạo.");
-
-        try
-        {
-            await UploadFileAsync(answerFilePath);
-            await Task.Delay(2000);
-            Log($"📄 Đã upload đáp án: {Path.GetFileName(answerFilePath)}");
-
-            await UploadFileAsync(examFilePath);
-            await Task.Delay(2000);
-            Log($"📄 Đã upload bài thi: {Path.GetFileName(examFilePath)}");
-
-            string prompt = BuildGradingPromptWithFile(answerFilePath, examFilePath, additionalNotes);
-            await TypePromptAsync(prompt);
-            await Task.Delay(1000);
-
-            await SubmitAndWaitAsync();
-
-            string result = await GetLatestResponseAsync();
-            Log($"✅ Đã chấm xong: {Path.GetFileName(examFilePath)}");
-            return result;
-        }
-        catch (Exception ex)
-        {
-            Log($"❌ Lỗi khi chấm {Path.GetFileName(examFilePath)}: {ex.Message}");
-            return $"LỖI: {ex.Message}";
-        }
+        await SendAnswerKeyAsync(answerFilePath, additionalNotes);
+        await Task.Delay(2000);
+        return await GradeStudentExamAsync(examFilePath, true, 1);
     }
 
     // ========== UPLOAD FILE ==========
