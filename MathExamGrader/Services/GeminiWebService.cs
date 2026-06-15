@@ -720,7 +720,7 @@ public class GeminiWebService : IDisposable
             }
         }
 
-        // Nếu không tìm thấy, detect lại realtime
+        // Nếu không tìm thấy, detect lại
         if (inputElement == null)
         {
             Log("   🔍 Tìm lại ô nhập...");
@@ -742,7 +742,7 @@ public class GeminiWebService : IDisposable
             if (!string.IsNullOrEmpty(sel))
             {
                 inputElement = _page.Locator(sel).First;
-                _inputSelector = sel; // Cập nhật cache
+                _inputSelector = sel;
             }
         }
 
@@ -752,50 +752,43 @@ public class GeminiWebService : IDisposable
             throw new Exception("Không tìm thấy ô nhập prompt.");
         }
 
-        // Click focus
+        // Click focus vào ô nhập
         await inputElement.ClickAsync();
         await Task.Delay(300);
 
-        // Clear
+        // Clear nội dung cũ
         await _page.Keyboard.PressAsync("Control+a");
         await _page.Keyboard.PressAsync("Backspace");
         await Task.Delay(200);
 
-        // Paste prompt qua clipboard (tốt nhất cho rich editor)
+        // === NHẬP PROMPT BẰNG execCommand insertText (bypass Trusted Types) ===
+        // Cách này hoạt động như user paste text vào, không vi phạm security policy
         await _page.EvaluateAsync(@"(text) => {
             const el = document.activeElement;
-            if (el && el.getAttribute('contenteditable') === 'true') {
-                el.innerHTML = '<p>' + text.replace(/\n/g, '</p><p>') + '</p>';
-                el.dispatchEvent(new Event('input', { bubbles: true }));
+            if (el) {
+                el.focus();
+                document.execCommand('selectAll', false, null);
+                document.execCommand('insertText', false, text);
             }
         }", prompt);
 
         await Task.Delay(500);
 
-        // Verify prompt đã được nhập
+        // Verify
         var currentText = await inputElement.InnerTextAsync();
         if (string.IsNullOrWhiteSpace(currentText))
         {
-            // Fallback: dùng keyboard
-            Log("   ⚠️ innerHTML không hoạt động, thử clipboard paste...");
+            // Fallback: dùng Playwright keyboard
+            Log("   ⚠️ execCommand không hoạt động, thử PressSequentially...");
             await inputElement.ClickAsync();
+            await Task.Delay(200);
+            
+            // Nhập prompt ngắn gọn hơn nếu quá dài (giới hạn keyboard input)
+            string shortPrompt = prompt.Length > 500 ? prompt.Substring(0, 500) : prompt;
             await _page.Keyboard.PressAsync("Control+a");
             await _page.Keyboard.PressAsync("Backspace");
-
-            // Copy to clipboard and paste
-            await _page.EvaluateAsync("(text) => navigator.clipboard.writeText(text)", prompt);
-            await Task.Delay(200);
-            await _page.Keyboard.PressAsync("Control+v");
-            await Task.Delay(500);
-
-            currentText = await inputElement.InnerTextAsync();
-            if (string.IsNullOrWhiteSpace(currentText))
-            {
-                // Final fallback: FillAsync
-                Log("   ⚠️ Clipboard không hoạt động, thử Fill...");
-                try { await inputElement.FillAsync(prompt); }
-                catch { await inputElement.PressSequentiallyAsync(prompt.Substring(0, Math.Min(200, prompt.Length))); }
-            }
+            await inputElement.PressSequentiallyAsync(shortPrompt, new LocatorPressSequentiallyOptions { Delay = 10 });
+            await Task.Delay(300);
         }
 
         Log("   ✅ Đã nhập prompt.");
