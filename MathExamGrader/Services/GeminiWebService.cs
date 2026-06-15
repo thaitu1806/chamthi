@@ -473,87 +473,233 @@ public class GeminiWebService : IDisposable
     {
         if (_page == null) return;
 
-        // Nếu phát hiện có input[type=file] trực tiếp
-        if (_uploadButtonSelector == "__FILE_INPUT__")
+        // Trên Gemini, nút "Nội dung tải lên và công cụ" (hoặc "+") sẽ mở MENU
+        // Trong menu có option "Upload file" → click vào đó mới mở file dialog
+
+        // Bước 1: Click nút "+" hoặc "Nội dung tải lên và công cụ" để mở menu
+        Log($"   📎 Đang upload: {Path.GetFileName(filePath)}");
+        
+        var menuButton = await FindMenuButtonAsync();
+        if (menuButton != null)
         {
-            var fileInput = _page.Locator("input[type='file']").First;
+            await menuButton.ClickAsync();
+            await Task.Delay(1500); // Đợi menu hiện ra
+
+            // Bước 2: Tìm và click item "Upload file" / "Tải tệp lên" trong menu
+            var uploadMenuItem = await FindUploadMenuItemAsync();
+            
+            if (uploadMenuItem != null)
+            {
+                // Bước 3: Click menu item và đợi FileChooser
+                try
+                {
+                    var fileChooser = await _page.RunAndWaitForFileChooserAsync(async () =>
+                    {
+                        await uploadMenuItem.ClickAsync();
+                    });
+                    await fileChooser.SetFilesAsync(filePath);
+                    Log($"   ✅ Upload thành công (menu → file chooser)");
+                    await Task.Delay(4000); // Đợi file được xử lý
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Log($"   ⚠️ FileChooser lỗi: {ex.Message}");
+                }
+            }
+            else
+            {
+                Log("   ⚠️ Không tìm thấy menu item 'Upload file'");
+                // Đóng menu bằng Escape
+                await _page.Keyboard.PressAsync("Escape");
+                await Task.Delay(500);
+            }
+        }
+
+        // Fallback: Thử tìm input[type=file] (có thể đã xuất hiện sau khi click menu)
+        var fileInput = _page.Locator("input[type='file']").First;
+        if (await fileInput.CountAsync() > 0)
+        {
             await fileInput.SetInputFilesAsync(filePath);
-            Log($"📎 Upload (direct input): {Path.GetFileName(filePath)}");
-            await Task.Delay(3000);
+            Log($"   ✅ Upload thành công (direct input)");
+            await Task.Delay(4000);
             return;
         }
 
-        // Dùng nút upload đã detect
-        if (!string.IsNullOrEmpty(_uploadButtonSelector))
+        // Fallback 2: Thử paste file (một số version Gemini hỗ trợ drag/paste)
+        Log("   ⚠️ Thử cách khác...");
+        
+        // Click nút "+" lần nữa nếu menu đã đóng
+        if (menuButton != null)
         {
+            await menuButton.ClickAsync();
+            await Task.Delay(1500);
+        }
+
+        // Tìm bất kỳ element nào cho phép file upload trong menu
+        var anyFileOption = await _page.EvaluateAsync<string?>(@"() => {
+            // Tìm trong menu items
+            const menuItems = document.querySelectorAll('[role=""menuitem""], [role=""option""], .menu-item, mat-menu-item, [class*=""menu""] button, [class*=""menu""] [role=""button""]');
+            for (const item of menuItems) {
+                const text = (item.textContent || '').toLowerCase();
+                const label = (item.getAttribute('aria-label') || '').toLowerCase();
+                if (text.includes('upload') || text.includes('tải') || text.includes('tệp') || 
+                    text.includes('file') || label.includes('upload') || label.includes('file')) {
+                    // Trả về text để log
+                    return item.textContent.trim().substring(0, 50);
+                }
+            }
+            return null;
+        }");
+
+        if (anyFileOption != null)
+        {
+            Log($"   Tìm thấy menu item: '{anyFileOption}'");
+            
+            // Click vào item đó bằng text
             try
             {
-                var uploadBtn = _page.Locator(_uploadButtonSelector).First;
-                
-                // Dùng FileChooser pattern
                 var fileChooser = await _page.RunAndWaitForFileChooserAsync(async () =>
                 {
-                    await uploadBtn.ClickAsync();
+                    await _page.GetByText(anyFileOption.Split('\n')[0].Trim()).First.ClickAsync();
                 });
                 await fileChooser.SetFilesAsync(filePath);
-                Log($"📎 Upload (detected button): {Path.GetFileName(filePath)}");
-                await Task.Delay(3000);
+                Log($"   ✅ Upload thành công (text match)");
+                await Task.Delay(4000);
                 return;
             }
-            catch (Exception ex)
+            catch
             {
-                Log($"   ⚠️ Lỗi với detected selector: {ex.Message}");
+                await _page.Keyboard.PressAsync("Escape");
+                await Task.Delay(500);
             }
         }
 
-        // Fallback: thử tìm lại nút upload bằng JS realtime
-        Log("   🔍 Đang tìm lại nút upload...");
-        var uploadSel = await _page.EvaluateAsync<string?>(@"() => {
-            // Tìm button có icon/label liên quan upload
-            const btns = document.querySelectorAll('button');
-            for (const btn of btns) {
+        // Final fallback: check lại input[type=file]
+        fileInput = _page.Locator("input[type='file']").First;
+        if (await fileInput.CountAsync() > 0)
+        {
+            await fileInput.SetInputFilesAsync(filePath);
+            Log($"   ✅ Upload thành công (late input)");
+            await Task.Delay(4000);
+            return;
+        }
+
+        await DumpPageInfoAsync();
+        throw new Exception("Không thể upload file. Kiểm tra log.");
+    }
+
+    /// <summary>
+    /// Tìm nút "+" hoặc "Nội dung tải lên và công cụ" trên thanh input
+    /// </summary>
+    private async Task<ILocator?> FindMenuButtonAsync()
+    {
+        if (_page == null) return null;
+
+        // Tìm bằng JS chính xác
+        var selector = await _page.EvaluateAsync<string?>(@"() => {
+            const buttons = document.querySelectorAll('button');
+            for (const btn of buttons) {
                 const label = (btn.getAttribute('aria-label') || '').toLowerCase();
                 const tooltip = (btn.getAttribute('data-tooltip') || btn.getAttribute('mattooltip') || '').toLowerCase();
                 const combined = label + ' ' + tooltip;
-                if (combined.includes('upload') || combined.includes('file') || 
-                    combined.includes('attach') || combined.includes('image') ||
-                    combined.includes('tệp') || combined.includes('hình')) {
+                
+                // Nút upload/attach trên Gemini
+                if (combined.includes('nội dung tải lên') || combined.includes('upload') || 
+                    combined.includes('add') || combined.includes('attach') || 
+                    combined.includes('thêm tệp') || combined.includes('công cụ')) {
                     const rect = btn.getBoundingClientRect();
                     if (rect.width > 0 && rect.height > 0) {
-                        if (btn.getAttribute('aria-label'))
-                            return 'button[aria-label=""' + btn.getAttribute('aria-label') + '""]';
+                        const ariaLabel = btn.getAttribute('aria-label');
+                        if (ariaLabel) return 'button[aria-label=""' + ariaLabel + '""]';
                     }
                 }
             }
             return null;
         }");
 
-        if (!string.IsNullOrEmpty(uploadSel))
+        if (!string.IsNullOrEmpty(selector))
         {
-            var btn = _page.Locator(uploadSel).First;
-            var fileChooser = await _page.RunAndWaitForFileChooserAsync(async () =>
-            {
-                await btn.ClickAsync();
-            });
-            await fileChooser.SetFilesAsync(filePath);
-            Log($"📎 Upload (realtime detect): {Path.GetFileName(filePath)}");
-            await Task.Delay(3000);
-            return;
+            return _page.Locator(selector).First;
         }
 
-        // Fallback cuối: tìm input[type=file] ẩn và set trực tiếp
-        var hiddenInput = _page.Locator("input[type='file']").First;
-        if (await hiddenInput.CountAsync() > 0)
+        // Fallback: dùng selector đã detect trước đó
+        if (!string.IsNullOrEmpty(_uploadButtonSelector) && _uploadButtonSelector != "__FILE_INPUT__")
         {
-            await hiddenInput.SetInputFilesAsync(filePath);
-            Log($"📎 Upload (hidden input): {Path.GetFileName(filePath)}");
-            await Task.Delay(3000);
-            return;
+            return _page.Locator(_uploadButtonSelector).First;
         }
 
-        // Dump info để debug
-        await DumpPageInfoAsync();
-        throw new Exception("Không tìm thấy cách upload file. Xem log để biết DOM hiện tại.");
+        return null;
+    }
+
+    /// <summary>
+    /// Sau khi menu mở, tìm item "Upload file" / "Tải tệp lên"
+    /// </summary>
+    private async Task<ILocator?> FindUploadMenuItemAsync()
+    {
+        if (_page == null) return null;
+
+        // Đợi menu animation
+        await Task.Delay(500);
+
+        // Tìm menu item bằng JS
+        var itemInfo = await _page.EvaluateAsync<string?>(@"() => {
+            // Tìm tất cả menu items visible
+            const candidates = document.querySelectorAll(
+                '[role=""menuitem""], [role=""option""], [class*=""menu""] button, ' +
+                '[class*=""menu""] [role=""button""], [class*=""dropdown""] button, ' +
+                'mat-menu-item, .mat-mdc-menu-item, [class*=""menu-item""]'
+            );
+            
+            for (const item of candidates) {
+                const text = (item.textContent || '').toLowerCase().trim();
+                const label = (item.getAttribute('aria-label') || '').toLowerCase();
+                const rect = item.getBoundingClientRect();
+                
+                // Phải visible
+                if (rect.width === 0 || rect.height === 0) continue;
+                
+                // Tìm item liên quan upload file
+                if (text.includes('upload') || text.includes('tải tệp lên') || 
+                    text.includes('tải lên') || text.includes('chọn tệp') ||
+                    label.includes('upload') || label.includes('tải tệp')) {
+                    // Trả về selector có thể dùng
+                    const ariaLabel = item.getAttribute('aria-label');
+                    if (ariaLabel) return '[aria-label=""' + ariaLabel + '""]';
+                    // Dùng text content
+                    return '__TEXT__' + item.textContent.trim().split('\n')[0];
+                }
+            }
+            
+            // Nếu không tìm thấy cụ thể, tìm item đầu tiên có icon file
+            for (const item of candidates) {
+                const rect = item.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) continue;
+                const text = (item.textContent || '').toLowerCase();
+                if (text.includes('file') || text.includes('tệp') || text.includes('máy tính')) {
+                    const ariaLabel = item.getAttribute('aria-label');
+                    if (ariaLabel) return '[aria-label=""' + ariaLabel + '""]';
+                    return '__TEXT__' + item.textContent.trim().split('\n')[0];
+                }
+            }
+            
+            return null;
+        }");
+
+        if (string.IsNullOrEmpty(itemInfo)) return null;
+
+        if (itemInfo.StartsWith("__TEXT__"))
+        {
+            // Tìm bằng text
+            string text = itemInfo.Substring(7).Trim();
+            Log($"   📂 Menu item (text): '{text}'");
+            return _page.GetByText(text, new PageGetByTextOptions { Exact = false }).First;
+        }
+        else
+        {
+            Log($"   📂 Menu item (selector): '{itemInfo}'");
+            return _page.Locator(itemInfo).First;
+        }
     }
 
     // ========== TYPE PROMPT ==========
