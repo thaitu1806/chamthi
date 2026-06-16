@@ -897,39 +897,61 @@ public class GeminiWebService : IDisposable
     {
         if (_page == null) return;
 
-        await Task.Delay(4000); // Đợi Gemini bắt đầu
+        // Đợi Gemini bắt đầu generate
+        await Task.Delay(3000);
+
+        // Lấy text hiện tại để so sánh
+        string previousText = "";
+        int stableCount = 0; // Đếm số lần text không đổi liên tiếp
 
         int maxWait = _maxWaitSeconds;
         for (int i = 0; i < maxWait; i++)
         {
             await Task.Delay(1000);
 
-            // Check xem Gemini còn đang generate không (bằng JS)
-            var isGenerating = await _page.EvaluateAsync<bool>(@"() => {
-                // Tìm nút Stop hoặc indicator loading
-                const btns = document.querySelectorAll('button');
-                for (const btn of btns) {
-                    const label = (btn.getAttribute('aria-label') || '').toLowerCase();
-                    if ((label.includes('stop') || label.includes('dừng')) &&
-                        btn.getBoundingClientRect().width > 0) {
-                        return true;
+            // Lấy text response hiện tại
+            var currentText = await _page.EvaluateAsync<string?>(@"() => {
+                // Tìm response mới nhất
+                const selectors = [
+                    '[data-message-author-role=""model""]',
+                    'message-content.model-response-text',
+                    '.model-response-text',
+                    '.markdown-main-panel',
+                    '.response-container',
+                ];
+                for (const sel of selectors) {
+                    const els = document.querySelectorAll(sel);
+                    if (els.length > 0) {
+                        const last = els[els.length - 1];
+                        return (last.innerText || '').trim();
                     }
                 }
-                // Check loading spinner/indicator
-                const loaders = document.querySelectorAll('[class*=""loading""], [class*=""generating""], [class*=""typing""]');
-                for (const l of loaders) {
-                    if (l.getBoundingClientRect().width > 0) return true;
-                }
-                return false;
-            }");
+                // Fallback
+                const main = document.querySelector('[role=""main""]');
+                return main ? (main.innerText || '').trim() : '';
+            }") ?? "";
 
-            if (!isGenerating)
+            // Nếu text không thay đổi 3 lần liên tiếp (3 giây) → coi như xong
+            if (currentText.Length > 20 && currentText == previousText)
             {
-                await Task.Delay(2000); // Buffer
-                break;
+                stableCount++;
+                if (stableCount >= 3)
+                {
+                    // Xong!
+                    break;
+                }
+            }
+            else
+            {
+                stableCount = 0;
+                previousText = currentText;
             }
 
-            if (i > 0 && i % 15 == 0) Log($"   Vẫn đang đợi... ({i}s)");
+            // Log progress mỗi 15 giây
+            if (i > 0 && i % 15 == 0)
+            {
+                Log($"   Vẫn đang đợi... ({i}s)");
+            }
         }
 
         Log("   ✅ Gemini đã trả lời xong.");
