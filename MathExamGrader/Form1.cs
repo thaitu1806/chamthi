@@ -24,13 +24,15 @@ public partial class Form1 : Form
     {
         _settings = FormSettings.LoadSettings();
         InitializeComponent();
+        // Set splitter distance sau khi form đã có kích thước
+        splitMain.SplitterDistance = Math.Max(350, splitMain.Width / 3);
         SetupEventHandlers();
         SetupDragDrop();
         ApplySettingsToUI();
         Log("Ứng dụng đã sẵn sàng. Hãy thêm file bài thi và nhấn 'Bắt đầu chấm bài'.");
         Log($"Account: {(_settings.GeminiConfig.GoogleAccount != "" ? _settings.GeminiConfig.GoogleAccount : "(chưa cấu hình)")}");
         Log($"Google Form: {(_settings.GoogleFormConfig.Enabled ? "BẬT" : "TẮT")}");
-        Log("Nhấn ⚙️ Cấu hình để thiết lập Gemini account và Google Form.");
+        Log("Nhấn ⚙️ để cấu hình Gemini account và Google Form.");
     }
 
     private void ApplySettingsToUI()

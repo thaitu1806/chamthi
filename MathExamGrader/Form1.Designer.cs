@@ -31,11 +31,10 @@ partial class Form1
         // === SPLIT CONTAINER (responsive layout) ===
         splitMain = new SplitContainer();
         splitMain.Dock = DockStyle.Fill;
-        splitMain.SplitterDistance = 420;
         splitMain.SplitterWidth = 3;
         splitMain.BackColor = Color.FromArgb(220, 225, 235);
-        splitMain.Panel1MinSize = 350;
-        splitMain.Panel2MinSize = 500;
+        splitMain.Panel1MinSize = 100;
+        splitMain.Panel2MinSize = 100;
 
         // === PANEL TRÁI ===
         panelLeft = new Panel();
