@@ -117,11 +117,27 @@ partial class FormSettings
         fieldY += fieldGap + 5;
         lblFormNote = new Label
         {
-            Text = "💡 Lấy Entry ID: Mở Form → F12 → Inspect field → Tìm name=\"entry.XXX\"",
+            Text = "📖 HƯỚNG DẪN TẠO GOOGLE FORM:\n\n" +
+                   "1. Vào https://forms.google.com → Tạo form mới\n" +
+                   "2. Thêm 6 câu hỏi dạng \"Câu trả lời ngắn\":\n" +
+                   "     • Tên học sinh\n" +
+                   "     • Tên bài thi\n" +
+                   "     • Điểm\n" +
+                   "     • Nhận xét\n" +
+                   "     • Chi tiết\n" +
+                   "     • Ngày chấm\n\n" +
+                   "3. LẤY ENTRY ID:\n" +
+                   "   - Mở form ở chế độ xem trước (Preview)\n" +
+                   "   - Nhấn F12 mở DevTools → chọn tab Elements\n" +
+                   "   - Click vào từng ô nhập trên form\n" +
+                   "   - Tìm thẻ <input> hoặc <textarea> có\n" +
+                   "     name=\"entry.1234567890\"\n" +
+                   "   - Copy số entry.XXXXXXXXXX vào ô tương ứng ở trên\n\n" +
+                   "4. Copy URL form (dạng /viewform) dán vào ô URL ở trên",
             Location = new Point(15, fieldY),
-            Size = new Size(520, 40),
-            ForeColor = Color.FromArgb(100, 100, 140),
-            Font = new Font("Segoe UI", 8.5F)
+            Size = new Size(530, 290),
+            ForeColor = Color.FromArgb(60, 60, 100),
+            Font = new Font("Segoe UI", 9F)
         };
 
         tabForm.Controls.AddRange(new Control[] {
