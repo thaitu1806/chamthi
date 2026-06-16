@@ -463,13 +463,18 @@ public partial class Form1 : Form
 
     private void ExportToCsv(string filePath)
     {
-        // Mặc định dùng UTF-8 BOM để Excel đọc đúng tiếng Việt
-        var encoding = _settings.ExportConfig.CsvEncoding switch
+        // LUÔN dùng UTF-8 with BOM để Excel đọc đúng tiếng Việt
+        Encoding encoding;
+        switch (_settings.ExportConfig.CsvEncoding)
         {
-            "UTF-8" => new UTF8Encoding(false),
-            "Windows-1252" => Encoding.GetEncoding(1252),
-            _ => new UTF8Encoding(true) // UTF-8 BOM (Excel) - mặc định
-        };
+            case "Windows-1252":
+                encoding = Encoding.GetEncoding(1252);
+                break;
+            default:
+                // UTF-8 with BOM — Excel sẽ nhận diện đúng Unicode
+                encoding = new UTF8Encoding(true);
+                break;
+        }
 
         var sb = new StringBuilder();
         sb.AppendLine("STT,Tên học sinh,File,Điểm,Nhận xét,Ngày chấm,Bài thi");
@@ -478,9 +483,6 @@ public partial class Form1 : Form
         {
             var r = _results[i];
             string feedback = r.Feedback.Replace("\"", "\"\"").Replace("\n", " ").Replace("\r", "");
-            string detail = r.DetailedResult.Replace("\"", "\"\"").Replace("\n", " ").Replace("\r", "");
-            // Giới hạn detail để CSV không quá nặng
-            if (detail.Length > 1000) detail = detail[..1000] + "...";
             sb.AppendLine($"{i + 1},\"{r.StudentName}\",\"{r.FileName}\",{r.Score:F1},\"{feedback}\",\"{r.GradedAt:dd/MM/yyyy HH:mm}\",\"{r.ExamTitle}\"");
         }
 
