@@ -19,12 +19,12 @@ partial class FormSettings
     {
         this.components = new System.ComponentModel.Container();
         this.Text = "⚙️ Cấu hình";
-        this.ClientSize = new Size(620, 680);
+        this.ClientSize = new Size(500, 680);
         this.StartPosition = FormStartPosition.CenterParent;
         this.FormBorderStyle = FormBorderStyle.Sizable;
         this.MaximizeBox = true;
         this.MinimizeBox = false;
-        this.MinimumSize = new Size(550, 500);
+        this.MinimumSize = new Size(480, 500);
         this.Font = new Font("Segoe UI", 10F);
         this.BackColor = Color.FromArgb(250, 250, 255);
 
