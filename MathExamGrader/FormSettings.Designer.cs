@@ -75,46 +75,53 @@ partial class FormSettings
         tabForm.Padding = new Padding(15);
         tabForm.AutoScroll = true;
 
-        chkFormEnabled = new CheckBox { Text = "Bật submit kết quả lên Google Form", Location = new Point(15, 20), AutoSize = true };
+        chkFormEnabled = new CheckBox { Text = "Bật submit kết quả lên Google Form", Location = new Point(15, 15), AutoSize = true };
 
-        lblFormUrl2 = new Label { Text = "Google Form URL:", Location = new Point(15, 55), AutoSize = true };
-        txtFormUrl2 = new TextBox { Location = new Point(15, 80), Size = new Size(520, 30), PlaceholderText = "https://docs.google.com/forms/d/e/xxx/viewform" };
+        lblFormUrl2 = new Label { Text = "Google Form URL:", Location = new Point(15, 45), AutoSize = true };
+        txtFormUrl2 = new TextBox { Location = new Point(15, 67), Size = new Size(520, 28), PlaceholderText = "https://docs.google.com/forms/d/e/xxx/viewform" };
 
         lblFieldMapping = new Label
         {
-            Text = "📝 Mapping Field (Entry ID từ Google Form):",
-            Location = new Point(15, 120),
+            Text = "📝 Mapping Field (Entry ID):",
+            Location = new Point(15, 102),
             AutoSize = true,
-            Font = new Font("Segoe UI", 10F, FontStyle.Bold)
+            Font = new Font("Segoe UI", 9.5F, FontStyle.Bold)
         };
 
-        lblFieldName = new Label { Text = "Tên học sinh:", Location = new Point(15, 150), AutoSize = true };
-        txtFieldName = new TextBox { Location = new Point(200, 148), Size = new Size(335, 30), PlaceholderText = "entry.123456789" };
+        int fieldY = 125;
+        int fieldGap = 32;
 
-        lblFieldExam = new Label { Text = "Tên bài thi:", Location = new Point(15, 185), AutoSize = true };
-        txtFieldExam = new TextBox { Location = new Point(200, 183), Size = new Size(335, 30), PlaceholderText = "entry.234567890" };
+        lblFieldName = new Label { Text = "Tên học sinh:", Location = new Point(15, fieldY), AutoSize = true };
+        txtFieldName = new TextBox { Location = new Point(170, fieldY - 2), Size = new Size(365, 28), PlaceholderText = "entry.123456789" };
 
-        lblFieldScore = new Label { Text = "Điểm:", Location = new Point(15, 220), AutoSize = true };
-        txtFieldScore = new TextBox { Location = new Point(200, 218), Size = new Size(335, 30), PlaceholderText = "entry.345678901" };
+        fieldY += fieldGap;
+        lblFieldExam = new Label { Text = "Tên bài thi:", Location = new Point(15, fieldY), AutoSize = true };
+        txtFieldExam = new TextBox { Location = new Point(170, fieldY - 2), Size = new Size(365, 28), PlaceholderText = "entry.234567890" };
 
-        lblFieldFeedback = new Label { Text = "Nhận xét:", Location = new Point(15, 255), AutoSize = true };
-        txtFieldFeedback = new TextBox { Location = new Point(200, 253), Size = new Size(335, 30), PlaceholderText = "entry.456789012" };
+        fieldY += fieldGap;
+        lblFieldScore = new Label { Text = "Điểm:", Location = new Point(15, fieldY), AutoSize = true };
+        txtFieldScore = new TextBox { Location = new Point(170, fieldY - 2), Size = new Size(365, 28), PlaceholderText = "entry.345678901" };
 
-        lblFieldDetail = new Label { Text = "Chi tiết:", Location = new Point(15, 290), AutoSize = true };
-        txtFieldDetail = new TextBox { Location = new Point(200, 288), Size = new Size(335, 30), PlaceholderText = "entry.567890123" };
+        fieldY += fieldGap;
+        lblFieldFeedback = new Label { Text = "Nhận xét:", Location = new Point(15, fieldY), AutoSize = true };
+        txtFieldFeedback = new TextBox { Location = new Point(170, fieldY - 2), Size = new Size(365, 28), PlaceholderText = "entry.456789012" };
 
-        lblFieldDate = new Label { Text = "Ngày chấm:", Location = new Point(15, 325), AutoSize = true };
-        txtFieldDate = new TextBox { Location = new Point(200, 323), Size = new Size(335, 30), PlaceholderText = "entry.678901234" };
+        fieldY += fieldGap;
+        lblFieldDetail = new Label { Text = "Chi tiết:", Location = new Point(15, fieldY), AutoSize = true };
+        txtFieldDetail = new TextBox { Location = new Point(170, fieldY - 2), Size = new Size(365, 28), PlaceholderText = "entry.567890123" };
 
+        fieldY += fieldGap;
+        lblFieldDate = new Label { Text = "Ngày chấm:", Location = new Point(15, fieldY), AutoSize = true };
+        txtFieldDate = new TextBox { Location = new Point(170, fieldY - 2), Size = new Size(365, 28), PlaceholderText = "entry.678901234" };
+
+        fieldY += fieldGap + 5;
         lblFormNote = new Label
         {
-            Text = "💡 Cách lấy Entry ID:\n" +
-                   "1. Mở Google Form → F12 (DevTools)\n" +
-                   "2. Inspect từng field → Tìm name=\"entry.XXXXXXX\"\n" +
-                   "3. Copy entry ID vào các ô tương ứng",
-            Location = new Point(15, 365),
-            Size = new Size(520, 80),
-            ForeColor = Color.FromArgb(80, 80, 120)
+            Text = "💡 Lấy Entry ID: Mở Form → F12 → Inspect field → Tìm name=\"entry.XXX\"",
+            Location = new Point(15, fieldY),
+            Size = new Size(520, 40),
+            ForeColor = Color.FromArgb(100, 100, 140),
+            Font = new Font("Segoe UI", 8.5F)
         };
 
         tabForm.Controls.AddRange(new Control[] {
