@@ -391,30 +391,18 @@ public partial class Form1 : Form
                 Log($"Điểm thấp nhất: {_results.Min(r => r.Score):F1}/10");
             }
 
-            // Auto export CSV — hỏi thầy muốn lưu ở đâu
+            // Tự động lưu CSV (không hiện popup)
             if (_results.Count > 0)
             {
-                Invoke(() =>
-                {
-                    using var sfd = new SaveFileDialog();
-                    sfd.Title = "Chọn nơi lưu file kết quả";
-                    sfd.Filter = "CSV file|*.csv";
-                    sfd.FileName = $"KetQua_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+                string folder = string.IsNullOrEmpty(_settings.ExportConfig.CsvOutputFolder)
+                    ? Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
+                    : _settings.ExportConfig.CsvOutputFolder;
 
-                    // Mặc định mở thư mục đã cấu hình
-                    if (!string.IsNullOrEmpty(_settings.ExportConfig.CsvOutputFolder) &&
-                        Directory.Exists(_settings.ExportConfig.CsvOutputFolder))
-                    {
-                        sfd.InitialDirectory = _settings.ExportConfig.CsvOutputFolder;
-                    }
-
-                    if (sfd.ShowDialog() == DialogResult.OK)
-                    {
-                        ExportToCsv(sfd.FileName);
-                        _lastExportPath = sfd.FileName;
-                        Log($"📁 Đã xuất CSV: {sfd.FileName}");
-                    }
-                });
+                Directory.CreateDirectory(folder);
+                string csvPath = Path.Combine(folder, $"KetQua_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+                ExportToCsv(csvPath);
+                _lastExportPath = csvPath;
+                Log($"📁 Đã lưu kết quả: {csvPath}");
             }
         }
         catch (OperationCanceledException)

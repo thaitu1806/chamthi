@@ -128,38 +128,42 @@ public class ResultParserService
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
 
-        // Tìm phần "NHẬN XÉT CHUNG:"
-        var match = Regex.Match(text,
-            @"NHẬN XÉT CHUNG[:\s]*(.*?)(?:\n\n|\z)",
+        // Lấy TOÀN BỘ phần CHI TIẾT + NHẬN XÉT CHUNG
+        var sb = new System.Text.StringBuilder();
+
+        // Lấy phần CHI TIẾT
+        var detailMatch = Regex.Match(text,
+            @"CHI TIẾT[:\s]*(.*?)(?=NHẬN XÉT CHUNG|$)",
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
-        if (match.Success)
+        if (detailMatch.Success)
         {
-            var feedback = match.Groups[1].Value.Trim();
-            if (feedback.Length > 0) return TruncateText(feedback, 500);
+            var detail = detailMatch.Groups[1].Value.Trim();
+            if (detail.Length > 0) sb.AppendLine(detail);
         }
 
-        // Tìm "Nhận xét:" bất kỳ
-        match = Regex.Match(text,
-            @"[Nn]hận xét[:\s]*(.*?)(?:\n\n|\n-|\z)",
-            RegexOptions.Singleline);
+        // Lấy phần NHẬN XÉT CHUNG
+        var feedbackMatch = Regex.Match(text,
+            @"NHẬN XÉT CHUNG[:\s]*(.*?)$",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
-        if (match.Success)
+        if (feedbackMatch.Success)
         {
-            var feedback = match.Groups[1].Value.Trim();
-            if (feedback.Length > 10) return TruncateText(feedback, 500);
+            var feedback = feedbackMatch.Groups[1].Value.Trim();
+            if (feedback.Length > 0)
+            {
+                if (sb.Length > 0) sb.AppendLine();
+                sb.Append("NHẬN XÉT: " + feedback);
+            }
         }
 
-        // Fallback: lấy đoạn cuối của response (thường là nhận xét)
-        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length > 3)
-        {
-            // Lấy 3 dòng cuối
-            var lastLines = string.Join(" ", lines.TakeLast(3));
-            return TruncateText(lastLines, 300);
-        }
+        if (sb.Length > 0) return sb.ToString();
 
-        return TruncateText(text, 300);
+        // Fallback: lấy toàn bộ text sau dòng ĐIỂM
+        var afterScore = Regex.Match(text, @"ĐIỂM[:\s]*\d.*?\n(.*)", RegexOptions.Singleline);
+        if (afterScore.Success) return afterScore.Groups[1].Value.Trim();
+
+        return TruncateText(text, 1000);
     }
 
     private static double ParseDouble(string value)
