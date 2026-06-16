@@ -19,22 +19,23 @@ partial class FormSettings
     {
         this.components = new System.ComponentModel.Container();
         this.Text = "⚙️ Cấu hình";
-        this.ClientSize = new Size(600, 580);
+        this.ClientSize = new Size(620, 680);
         this.StartPosition = FormStartPosition.CenterParent;
-        this.FormBorderStyle = FormBorderStyle.FixedDialog;
-        this.MaximizeBox = false;
+        this.FormBorderStyle = FormBorderStyle.Sizable;
+        this.MaximizeBox = true;
         this.MinimizeBox = false;
+        this.MinimumSize = new Size(550, 500);
         this.Font = new Font("Segoe UI", 10F);
         this.BackColor = Color.FromArgb(250, 250, 255);
 
         // === Tab Control ===
         tabControl = new TabControl();
-        tabControl.Location = new Point(10, 10);
-        tabControl.Size = new Size(575, 480);
+        tabControl.Dock = DockStyle.Fill;
 
         // --- Tab 1: Gemini ---
         tabGemini = new TabPage("🤖 Gemini Account");
         tabGemini.Padding = new Padding(15);
+        tabGemini.AutoScroll = true;
 
         lblGeminiUrl = new Label { Text = "Gemini URL:", Location = new Point(15, 20), AutoSize = true };
         txtGeminiUrl = new TextBox { Location = new Point(15, 45), Size = new Size(520, 30) };
@@ -72,6 +73,7 @@ partial class FormSettings
         // --- Tab 2: Google Form ---
         tabForm = new TabPage("📋 Google Form");
         tabForm.Padding = new Padding(15);
+        tabForm.AutoScroll = true;
 
         chkFormEnabled = new CheckBox { Text = "Bật submit kết quả lên Google Form", Location = new Point(15, 20), AutoSize = true };
 
@@ -130,6 +132,7 @@ partial class FormSettings
         // --- Tab 3: Export ---
         tabExport = new TabPage("💾 Xuất kết quả");
         tabExport.Padding = new Padding(15);
+        tabExport.AutoScroll = true;
 
         chkAutoExport = new CheckBox { Text = "Tự động xuất CSV sau khi chấm xong", Location = new Point(15, 20), AutoSize = true, Checked = true };
 
@@ -153,27 +156,36 @@ partial class FormSettings
         tabControl.TabPages.Add(tabForm);
         tabControl.TabPages.Add(tabExport);
 
-        // === Buttons ===
+        // === Buttons (Panel phía dưới) ===
+        var panelButtons = new Panel();
+        panelButtons.Dock = DockStyle.Bottom;
+        panelButtons.Height = 55;
+        panelButtons.Padding = new Padding(10, 8, 10, 8);
+
         btnSave = new Button
         {
             Text = "💾 Lưu cấu hình",
-            Location = new Point(330, 500),
-            Size = new Size(140, 40),
+            Size = new Size(140, 38),
             BackColor = Color.FromArgb(66, 133, 244),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
-            Font = new Font("Segoe UI", 10F, FontStyle.Bold)
+            Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+            Dock = DockStyle.Right
         };
 
         btnCancel = new Button
         {
             Text = "❌ Hủy",
-            Location = new Point(480, 500),
-            Size = new Size(90, 40),
-            FlatStyle = FlatStyle.Flat
+            Size = new Size(90, 38),
+            FlatStyle = FlatStyle.Flat,
+            Dock = DockStyle.Right
         };
 
-        this.Controls.AddRange(new Control[] { tabControl, btnSave, btnCancel });
+        panelButtons.Controls.Add(btnCancel);
+        panelButtons.Controls.Add(btnSave);
+
+        this.Controls.Add(tabControl);
+        this.Controls.Add(panelButtons);
     }
 
     #endregion
