@@ -19,7 +19,7 @@ partial class FormSettings
     {
         this.components = new System.ComponentModel.Container();
         this.Text = "⚙️ Cấu hình";
-        this.ClientSize = new Size(500, 680);
+        this.ClientSize = new Size(540, 680);
         this.StartPosition = FormStartPosition.CenterParent;
         this.FormBorderStyle = FormBorderStyle.Sizable;
         this.MaximizeBox = true;
