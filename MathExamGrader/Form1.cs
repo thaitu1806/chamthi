@@ -14,7 +14,8 @@ public partial class Form1 : Form
     private CancellationTokenSource? _cts;
     private bool _isGrading;
     private AppSettings _settings;
-    private string? _answerKeyFilePath; // File đáp án (ảnh/pdf/docx)
+    private string? _answerKeyFilePath;
+    private string? _lastExportPath; // File đáp án (ảnh/pdf/docx)
 
     private static readonly string[] SupportedExtensions =
         { ".docx", ".doc", ".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".gif" };
@@ -388,15 +389,30 @@ public partial class Form1 : Form
                 Log($"Điểm thấp nhất: {_results.Min(r => r.Score):F1}/10");
             }
 
-            // Auto export CSV nếu bật
-            if (_settings.ExportConfig.AutoExportCsv && _results.Count > 0)
+            // Auto export CSV — hỏi thầy muốn lưu ở đâu
+            if (_results.Count > 0)
             {
-                string folder = string.IsNullOrEmpty(_settings.ExportConfig.CsvOutputFolder)
-                    ? AppContext.BaseDirectory
-                    : _settings.ExportConfig.CsvOutputFolder;
-                string csvPath = Path.Combine(folder, $"KetQua_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
-                ExportToCsv(csvPath);
-                Log($"📁 Đã tự động xuất CSV: {csvPath}");
+                Invoke(() =>
+                {
+                    using var sfd = new SaveFileDialog();
+                    sfd.Title = "Chọn nơi lưu file kết quả";
+                    sfd.Filter = "CSV file|*.csv";
+                    sfd.FileName = $"KetQua_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+
+                    // Mặc định mở thư mục đã cấu hình
+                    if (!string.IsNullOrEmpty(_settings.ExportConfig.CsvOutputFolder) &&
+                        Directory.Exists(_settings.ExportConfig.CsvOutputFolder))
+                    {
+                        sfd.InitialDirectory = _settings.ExportConfig.CsvOutputFolder;
+                    }
+
+                    if (sfd.ShowDialog() == DialogResult.OK)
+                    {
+                        ExportToCsv(sfd.FileName);
+                        _lastExportPath = sfd.FileName;
+                        Log($"📁 Đã xuất CSV: {sfd.FileName}");
+                    }
+                });
             }
         }
         catch (OperationCanceledException)
@@ -447,18 +463,23 @@ public partial class Form1 : Form
 
     private void BtnOpenFolder_Click(object? sender, EventArgs e)
     {
+        // Ưu tiên mở thư mục chứa file vừa export
+        if (!string.IsNullOrEmpty(_lastExportPath) && File.Exists(_lastExportPath))
+        {
+            // Mở explorer và highlight file
+            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{_lastExportPath}\"");
+            return;
+        }
+
+        // Fallback: mở thư mục cấu hình hoặc thư mục app
         string folder = string.IsNullOrEmpty(_settings.ExportConfig.CsvOutputFolder)
             ? AppContext.BaseDirectory
             : _settings.ExportConfig.CsvOutputFolder;
 
         if (Directory.Exists(folder))
-        {
             System.Diagnostics.Process.Start("explorer.exe", folder);
-        }
         else
-        {
             System.Diagnostics.Process.Start("explorer.exe", AppContext.BaseDirectory);
-        }
     }
 
     private void ExportToCsv(string filePath)
