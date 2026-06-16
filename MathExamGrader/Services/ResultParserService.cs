@@ -19,16 +19,50 @@ public class ResultParserService
             DetailedResult = geminiResponse
         };
 
-        // Trích xuất điểm - thử nhiều pattern
+        // Trích xuất điểm
         result.Score = ExtractScore(geminiResponse);
 
         // Trích xuất nhận xét
         result.Feedback = ExtractFeedback(geminiResponse);
 
-        // Tên học sinh từ tên file (bỏ extension)
-        result.StudentName = Path.GetFileNameWithoutExtension(fileName);
+        // Trích xuất họ tên HS (nếu Gemini tìm thấy trên bài)
+        string detectedName = ExtractStudentName(geminiResponse);
+        if (!string.IsNullOrEmpty(detectedName) && detectedName.ToLower() != "không rõ")
+        {
+            result.StudentName = detectedName;
+        }
+        else
+        {
+            // Fallback: dùng tên file
+            result.StudentName = Path.GetFileNameWithoutExtension(fileName);
+        }
 
         return result;
+    }
+
+    private string ExtractStudentName(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+
+        // Pattern: "HỌ TÊN: Nguyễn Văn A"
+        var match = Regex.Match(text, @"HỌ TÊN[:\s]*(.+?)(?:\n|$)", RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            string name = match.Groups[1].Value.Trim().Trim('"', '\'', '.', ',');
+            if (name.Length > 1 && name.Length < 60 && name.ToLower() != "không rõ" && name != "[]")
+                return name;
+        }
+
+        // Pattern: "Họ và tên: ..." 
+        match = Regex.Match(text, @"[Hh]ọ\s*(và|&)?\s*[Tt]ên[:\s]*(.+?)(?:\n|$)");
+        if (match.Success)
+        {
+            string name = match.Groups[2].Value.Trim().Trim('"', '\'', '.', ',');
+            if (name.Length > 1 && name.Length < 60 && name.ToLower() != "không rõ")
+                return name;
+        }
+
+        return string.Empty;
     }
 
     private double ExtractScore(string text)

@@ -34,11 +34,7 @@ public partial class Form1 : Form
 
     private void ApplySettingsToUI()
     {
-        // Áp dụng Form URL từ settings nếu có
-        if (_settings.GoogleFormConfig.Enabled && !string.IsNullOrEmpty(_settings.GoogleFormConfig.FormUrl))
-        {
-            txtFormUrl.Text = _settings.GoogleFormConfig.FormUrl;
-        }
+        // Settings được áp dụng khi chấm bài
     }
 
     private void SetupEventHandlers()
@@ -52,6 +48,7 @@ public partial class Form1 : Form
         btnSettings.Click += BtnSettings_Click;
         btnAnswerFile.Click += BtnAnswerFile_Click;
         btnClearAnswerFile.Click += BtnClearAnswerFile_Click;
+        btnOpenFolder.Click += BtnOpenFolder_Click;
     }
 
     private void BtnSettings_Click(object? sender, EventArgs e)
@@ -367,17 +364,6 @@ public partial class Form1 : Form
                 {
                     await _formService.SubmitResultAsync(_settings.GoogleFormConfig, result);
                 }
-                else if (!string.IsNullOrWhiteSpace(txtFormUrl.Text))
-                {
-                    // Fallback: dùng URL nhập trực tiếp trên form
-                    var tempConfig = new GoogleFormConfig
-                    {
-                        Enabled = true,
-                        FormUrl = txtFormUrl.Text.Trim(),
-                        FieldMapping = _settings.GoogleFormConfig.FieldMapping
-                    };
-                    await _formService.SubmitResultAsync(tempConfig, result);
-                }
 
                 // Đợi giữa các bài
                 if (i < _examFiles.Count - 1)
@@ -459,6 +445,22 @@ public partial class Form1 : Form
         }
     }
 
+    private void BtnOpenFolder_Click(object? sender, EventArgs e)
+    {
+        string folder = string.IsNullOrEmpty(_settings.ExportConfig.CsvOutputFolder)
+            ? AppContext.BaseDirectory
+            : _settings.ExportConfig.CsvOutputFolder;
+
+        if (Directory.Exists(folder))
+        {
+            System.Diagnostics.Process.Start("explorer.exe", folder);
+        }
+        else
+        {
+            System.Diagnostics.Process.Start("explorer.exe", AppContext.BaseDirectory);
+        }
+    }
+
     private void ExportToCsv(string filePath)
     {
         // Mặc định dùng UTF-8 BOM để Excel đọc đúng tiếng Việt
@@ -495,6 +497,7 @@ public partial class Form1 : Form
             btnClearFiles.Enabled = !isGrading;
             btnSettings.Enabled = !isGrading;
             panelDragDrop.Enabled = !isGrading;
+            btnOpenFolder.Enabled = !isGrading;
         });
     }
 

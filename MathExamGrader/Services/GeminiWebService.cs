@@ -463,21 +463,26 @@ public class GeminiWebService : IDisposable
             await UploadFileAsync(examFilePath);
             await Task.Delay(2000);
 
-            // Prompt ngắn gọn (Gemini đã có context đáp án)
+            // Prompt yêu cầu chấm + lấy tên HS nếu có
             string prompt;
             if (hasAnswerKey)
             {
                 prompt = $"Chấm bài học sinh #{studentNumber} (file vừa upload). " +
-                         "So sánh với đáp án đã cho ở trên. " +
-                         "Trả lời ĐÚNG format:\n\n" +
-                         "ĐIỂM: [tổng]/10\nCHI TIẾT:\n- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n...\nNHẬN XÉT CHUNG: [1-2 câu]";
+                         "So sánh với đáp án đã cho ở trên.\n" +
+                         "BẮT BUỘC trả lời ĐÚNG format (giữ nguyên từ khóa):\n\n" +
+                         "HỌ TÊN: [tên học sinh nếu thấy trên bài, nếu không thấy ghi \"Không rõ\"]\n" +
+                         "ĐIỂM: [tổng]/10\n" +
+                         "CHI TIẾT:\n- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n...\n" +
+                         "NHẬN XÉT CHUNG: [1-2 câu]";
             }
             else
             {
-                prompt = $"Đọc và chấm bài thi Toán học sinh #{studentNumber} (file vừa upload). " +
-                         "Tự đánh giá bài làm. " +
-                         "Trả lời ĐÚNG format:\n\n" +
-                         "ĐIỂM: [tổng]/10\nCHI TIẾT:\n- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n...\nNHẬN XÉT CHUNG: [1-2 câu]";
+                prompt = $"Đọc và chấm bài thi Toán #{studentNumber} (file vừa upload).\n" +
+                         "BẮT BUỘC trả lời ĐÚNG format:\n\n" +
+                         "HỌ TÊN: [tên học sinh nếu thấy trên bài, nếu không thấy ghi \"Không rõ\"]\n" +
+                         "ĐIỂM: [tổng]/10\n" +
+                         "CHI TIẾT:\n- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n...\n" +
+                         "NHẬN XÉT CHUNG: [1-2 câu]";
             }
 
             await TypePromptAsync(prompt);
