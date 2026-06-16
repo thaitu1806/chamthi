@@ -163,7 +163,7 @@ partial class Form1
         // File list + buttons
         panelFileList = new Panel();
         panelFileList.Dock = DockStyle.Top;
-        panelFileList.Height = 95;
+        panelFileList.Height = 90;
 
         lstFiles = new ListBox();
         lstFiles.Dock = DockStyle.Fill;
@@ -174,25 +174,29 @@ partial class Form1
         panelFileButtons.Dock = DockStyle.Right;
         panelFileButtons.Width = 72;
         panelFileButtons.FlowDirection = FlowDirection.TopDown;
-        panelFileButtons.Padding = new Padding(4, 0, 0, 0);
+        panelFileButtons.WrapContents = false;
+        panelFileButtons.Padding = new Padding(2, 0, 0, 0);
 
         btnAddFiles = new Button();
-        btnAddFiles.Text = "📂 Thêm";
+        btnAddFiles.Text = "📂Thêm";
         btnAddFiles.Size = new Size(66, 28);
         btnAddFiles.FlatStyle = FlatStyle.Flat;
         btnAddFiles.Font = new Font("Segoe UI", 8F);
+        btnAddFiles.Margin = new Padding(0, 0, 0, 2);
 
         btnRemoveFile = new Button();
-        btnRemoveFile.Text = "❌ Xóa";
+        btnRemoveFile.Text = "❌Xóa";
         btnRemoveFile.Size = new Size(66, 28);
         btnRemoveFile.FlatStyle = FlatStyle.Flat;
         btnRemoveFile.Font = new Font("Segoe UI", 8F);
+        btnRemoveFile.Margin = new Padding(0, 0, 0, 2);
 
         btnClearFiles = new Button();
-        btnClearFiles.Text = "🗑️ Tất cả";
+        btnClearFiles.Text = "🗑️Hết";
         btnClearFiles.Size = new Size(66, 28);
         btnClearFiles.FlatStyle = FlatStyle.Flat;
         btnClearFiles.Font = new Font("Segoe UI", 8F);
+        btnClearFiles.Margin = new Padding(0, 0, 0, 2);
 
         panelFileButtons.Controls.AddRange(new Control[] { btnAddFiles, btnRemoveFile, btnClearFiles });
         panelFileList.Controls.Add(lstFiles);
