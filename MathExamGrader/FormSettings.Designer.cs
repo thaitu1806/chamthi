@@ -115,29 +115,33 @@ partial class FormSettings
         txtFieldDate = new TextBox { Location = new Point(170, fieldY - 2), Size = new Size(365, 28), PlaceholderText = "entry.678901234" };
 
         fieldY += fieldGap + 5;
-        lblFormNote = new Label
+        txtFormNote = new TextBox
         {
-            Text = "📖 HƯỚNG DẪN TẠO GOOGLE FORM:\n\n" +
-                   "1. Vào https://forms.google.com → Tạo form mới\n" +
-                   "2. Thêm 6 câu hỏi dạng \"Câu trả lời ngắn\":\n" +
-                   "     • Tên học sinh\n" +
-                   "     • Tên bài thi\n" +
-                   "     • Điểm\n" +
-                   "     • Nhận xét\n" +
-                   "     • Chi tiết\n" +
-                   "     • Ngày chấm\n\n" +
-                   "3. LẤY ENTRY ID:\n" +
-                   "   - Mở form ở chế độ xem trước (Preview)\n" +
-                   "   - Nhấn F12 mở DevTools → chọn tab Elements\n" +
-                   "   - Click vào từng ô nhập trên form\n" +
-                   "   - Tìm thẻ <input> hoặc <textarea> có\n" +
-                   "     name=\"entry.1234567890\"\n" +
-                   "   - Copy số entry.XXXXXXXXXX vào ô tương ứng ở trên\n\n" +
-                   "4. Copy URL form (dạng /viewform) dán vào ô URL ở trên",
+            Text = "📖 HƯỚNG DẪN TẠO GOOGLE FORM:\r\n\r\n" +
+                   "1. Vào https://forms.google.com → Tạo form mới\r\n" +
+                   "2. Thêm 6 câu hỏi dạng \"Câu trả lời ngắn\":\r\n" +
+                   "     • Tên học sinh\r\n" +
+                   "     • Tên bài thi\r\n" +
+                   "     • Điểm\r\n" +
+                   "     • Nhận xét\r\n" +
+                   "     • Chi tiết\r\n" +
+                   "     • Ngày chấm\r\n\r\n" +
+                   "3. LẤY ENTRY ID:\r\n" +
+                   "   - Mở form ở chế độ xem trước (Preview)\r\n" +
+                   "   - Nhấn F12 mở DevTools → chọn tab Elements\r\n" +
+                   "   - Click vào từng ô nhập trên form\r\n" +
+                   "   - Tìm thẻ <input> có name=\"entry.1234567890\"\r\n" +
+                   "   - Copy entry.XXX vào ô tương ứng ở trên\r\n\r\n" +
+                   "4. Copy URL form (dạng /viewform) dán vào ô URL",
             Location = new Point(15, fieldY),
-            Size = new Size(530, 290),
-            ForeColor = Color.FromArgb(60, 60, 100),
-            Font = new Font("Segoe UI", 9F)
+            Size = new Size(530, 180),
+            Multiline = true,
+            ReadOnly = true,
+            ScrollBars = ScrollBars.Vertical,
+            BackColor = Color.FromArgb(248, 248, 255),
+            ForeColor = Color.FromArgb(50, 50, 90),
+            Font = new Font("Segoe UI", 9F),
+            BorderStyle = BorderStyle.FixedSingle
         };
 
         tabForm.Controls.AddRange(new Control[] {
@@ -149,7 +153,7 @@ partial class FormSettings
             lblFieldFeedback, txtFieldFeedback,
             lblFieldDetail, txtFieldDetail,
             lblFieldDate, txtFieldDate,
-            lblFormNote
+            txtFormNote
         });
 
         // --- Tab 3: Export ---
@@ -247,7 +251,7 @@ partial class FormSettings
     private TextBox txtFieldDetail;
     private Label lblFieldDate;
     private TextBox txtFieldDate;
-    private Label lblFormNote;
+    private TextBox txtFormNote;
 
     // Export tab
     private CheckBox chkAutoExport;
