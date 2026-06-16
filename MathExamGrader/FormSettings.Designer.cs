@@ -89,7 +89,7 @@ partial class FormSettings
         };
 
         int fieldY = 125;
-        int fieldGap = 32;
+        int fieldGap = 28;
 
         lblFieldName = new Label { Text = "Tên học sinh:", Location = new Point(15, fieldY), AutoSize = true };
         txtFieldName = new TextBox { Location = new Point(170, fieldY - 2), Size = new Size(365, 28), PlaceholderText = "entry.123456789" };
