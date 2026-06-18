@@ -638,29 +638,33 @@ public class GeminiWebService : IDisposable
     }
 
     /// <summary>
-    /// Tìm nút "+" hoặc "Nội dung tải lên và công cụ" trên thanh input
+    /// Tìm nút "+" hoặc "Nội dung tải lên và công cụ" trên thanh input (dưới cùng trang)
     /// </summary>
     private async Task<ILocator?> FindMenuButtonAsync()
     {
         if (_page == null) return null;
 
-        // Tìm bằng JS chính xác
+        // Tìm bằng JS - CHỈ tìm button trong vùng input (bottom of page)
         var selector = await _page.EvaluateAsync<string?>(@"() => {
+            const viewportHeight = window.innerHeight;
             const buttons = document.querySelectorAll('button');
+            
             for (const btn of buttons) {
+                const rect = btn.getBoundingClientRect();
+                // Chỉ xét button ở 1/3 dưới cùng trang (vùng input area)
+                if (rect.top < viewportHeight * 0.6) continue;
+                if (rect.width === 0 || rect.height === 0) continue;
+                
                 const label = (btn.getAttribute('aria-label') || '').toLowerCase();
                 const tooltip = (btn.getAttribute('data-tooltip') || btn.getAttribute('mattooltip') || '').toLowerCase();
                 const combined = label + ' ' + tooltip;
                 
-                // Nút upload/attach trên Gemini
                 if (combined.includes('nội dung tải lên') || combined.includes('upload') || 
                     combined.includes('add') || combined.includes('attach') || 
-                    combined.includes('thêm tệp') || combined.includes('công cụ')) {
-                    const rect = btn.getBoundingClientRect();
-                    if (rect.width > 0 && rect.height > 0) {
-                        const ariaLabel = btn.getAttribute('aria-label');
-                        if (ariaLabel) return 'button[aria-label=""' + ariaLabel + '""]';
-                    }
+                    combined.includes('thêm tệp') || combined.includes('công cụ') ||
+                    combined.includes('tải tệp lên')) {
+                    const ariaLabel = btn.getAttribute('aria-label');
+                    if (ariaLabel) return 'button[aria-label=""' + ariaLabel + '""]';
                 }
             }
             return null;
@@ -671,10 +675,33 @@ public class GeminiWebService : IDisposable
             return _page.Locator(selector).First;
         }
 
-        // Fallback: dùng selector đã detect trước đó
-        if (!string.IsNullOrEmpty(_uploadButtonSelector) && _uploadButtonSelector != "__FILE_INPUT__")
+        // Fallback: tìm nút "+" gần ô input (contenteditable)
+        var fallbackSel = await _page.EvaluateAsync<string?>(@"() => {
+            const input = document.querySelector('[contenteditable=""true""]');
+            if (!input) return null;
+            
+            // Tìm parent chứa input, rồi tìm button trong parent đó
+            let container = input.parentElement;
+            for (let i = 0; i < 5 && container; i++) {
+                const btns = container.querySelectorAll('button');
+                for (const btn of btns) {
+                    const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                    if (label.includes('nội dung') || label.includes('upload') || 
+                        label.includes('attach') || label.includes('tải') || label.includes('thêm')) {
+                        const rect = btn.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) {
+                            return 'button[aria-label=""' + btn.getAttribute('aria-label') + '""]';
+                        }
+                    }
+                }
+                container = container.parentElement;
+            }
+            return null;
+        }");
+
+        if (!string.IsNullOrEmpty(fallbackSel))
         {
-            return _page.Locator(_uploadButtonSelector).First;
+            return _page.Locator(fallbackSel).First;
         }
 
         return null;
