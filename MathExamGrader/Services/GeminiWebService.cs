@@ -519,10 +519,10 @@ public class GeminiWebService : IDisposable
     {
         if (_page == null) return;
 
-        // Trên Gemini, nút "Nội dung tải lên và công cụ" (hoặc "+") sẽ mở MENU
-        // Trong menu có option "Upload file" → click vào đó mới mở file dialog
+        // Scroll xuống cuối trang trước (đảm bảo input area visible)
+        await _page.EvaluateAsync("() => window.scrollTo(0, document.body.scrollHeight)");
+        await Task.Delay(1000);
 
-        // Bước 1: Click nút "+" hoặc "Nội dung tải lên và công cụ" để mở menu
         Log($"   📎 Đang upload: {Path.GetFileName(filePath)}");
         
         var menuButton = await FindMenuButtonAsync();
@@ -642,64 +642,61 @@ public class GeminiWebService : IDisposable
     {
         if (_page == null) return null;
 
-        // Tìm bằng JS - CHỈ tìm button trong vùng input (bottom of page)
+        // Cách 1: Tìm button gần ô input (contenteditable) nhất
         var selector = await _page.EvaluateAsync<string?>(@"() => {
-            const viewportHeight = window.innerHeight;
+            // Tìm ô input trước
+            const input = document.querySelector('[contenteditable=""true""]');
+            if (!input) return null;
+            
+            const inputRect = input.getBoundingClientRect();
+            
+            // Tìm tất cả button, ưu tiên button gần input nhất có label upload
             const buttons = document.querySelectorAll('button');
+            let bestBtn = null;
+            let bestDist = 99999;
             
             for (const btn of buttons) {
+                const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                
+                // Chỉ xét button có label liên quan upload
+                if (!label.includes('nội dung tải lên') && !label.includes('upload') && 
+                    !label.includes('attach') && !label.includes('thêm tệp') &&
+                    !label.includes('tải tệp')) continue;
+                
                 const rect = btn.getBoundingClientRect();
-                // Chỉ xét button ở 1/3 dưới cùng trang (vùng input area)
-                if (rect.top < viewportHeight * 0.6) continue;
                 if (rect.width === 0 || rect.height === 0) continue;
                 
-                const label = (btn.getAttribute('aria-label') || '').toLowerCase();
-                const tooltip = (btn.getAttribute('data-tooltip') || btn.getAttribute('mattooltip') || '').toLowerCase();
-                const combined = label + ' ' + tooltip;
-                
-                if (combined.includes('nội dung tải lên') || combined.includes('upload') || 
-                    combined.includes('add') || combined.includes('attach') || 
-                    combined.includes('thêm tệp') || combined.includes('công cụ') ||
-                    combined.includes('tải tệp lên')) {
-                    const ariaLabel = btn.getAttribute('aria-label');
-                    if (ariaLabel) return 'button[aria-label=""' + ariaLabel + '""]';
+                // Tính khoảng cách đến input
+                const dist = Math.abs(rect.top - inputRect.top) + Math.abs(rect.left - inputRect.left);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestBtn = btn;
                 }
+            }
+            
+            if (bestBtn) {
+                const ariaLabel = bestBtn.getAttribute('aria-label');
+                if (ariaLabel) return 'button[aria-label=""' + ariaLabel + '""]';
             }
             return null;
         }");
 
         if (!string.IsNullOrEmpty(selector))
         {
-            return _page.Locator(selector).First;
+            var btn = _page.Locator(selector).First;
+            if (await btn.CountAsync() > 0)
+            {
+                Log($"   🔍 Nút upload: {selector.Substring(0, Math.Min(60, selector.Length))}...");
+                return btn;
+            }
         }
 
-        // Fallback: tìm nút "+" gần ô input (contenteditable)
-        var fallbackSel = await _page.EvaluateAsync<string?>(@"() => {
-            const input = document.querySelector('[contenteditable=""true""]');
-            if (!input) return null;
-            
-            // Tìm parent chứa input, rồi tìm button trong parent đó
-            let container = input.parentElement;
-            for (let i = 0; i < 5 && container; i++) {
-                const btns = container.querySelectorAll('button');
-                for (const btn of btns) {
-                    const label = (btn.getAttribute('aria-label') || '').toLowerCase();
-                    if (label.includes('nội dung') || label.includes('upload') || 
-                        label.includes('attach') || label.includes('tải') || label.includes('thêm')) {
-                        const rect = btn.getBoundingClientRect();
-                        if (rect.width > 0 && rect.height > 0) {
-                            return 'button[aria-label=""' + btn.getAttribute('aria-label') + '""]';
-                        }
-                    }
-                }
-                container = container.parentElement;
-            }
-            return null;
-        }");
-
-        if (!string.IsNullOrEmpty(fallbackSel))
+        // Cách 2: Tìm button có đúng aria-label "Nội dung tải lên và công cụ"
+        var directBtn = _page.Locator("button[aria-label='Nội dung tải lên và công cụ']").First;
+        if (await directBtn.CountAsync() > 0)
         {
-            return _page.Locator(fallbackSel).First;
+            Log("   🔍 Nút upload: direct match 'Nội dung tải lên và công cụ'");
+            return directBtn;
         }
 
         return null;
