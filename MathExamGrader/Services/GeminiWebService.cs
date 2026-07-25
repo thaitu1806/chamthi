@@ -59,8 +59,10 @@ public class GeminiWebService : IDisposable
                         $"--no-first-run " +
                         $"--no-default-browser-check " +
                         $"--disable-blink-features=AutomationControlled " +
-                        $"--start-maximized",
-            UseShellExecute = true
+                        $"--window-position=-32000,-32000 " +
+                        $"--window-size=1280,900",
+            UseShellExecute = true,
+            WindowStyle = ProcessWindowStyle.Minimized
         };
 
         _edgeProcess = Process.Start(startInfo);
