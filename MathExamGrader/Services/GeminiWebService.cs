@@ -34,6 +34,11 @@ public class GeminiWebService : IDisposable
 
     public async Task InitializeAsync(string userDataDir)
     {
+        // Đảm bảo Playwright tìm được driver
+        // Khi publish single-file, cần set PLAYWRIGHT_DRIVER_SEARCH_PATH
+        var appDir = AppContext.BaseDirectory;
+        Environment.SetEnvironmentVariable("PLAYWRIGHT_DRIVER_SEARCH_PATH", appDir);
+
         _playwright = await Playwright.CreateAsync();
 
         string edgePath = GetEdgePath();
