@@ -128,21 +128,7 @@ public class ResultParserService
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
 
-        // Lấy TOÀN BỘ phần CHI TIẾT + NHẬN XÉT CHUNG
-        var sb = new System.Text.StringBuilder();
-
-        // Lấy phần CHI TIẾT
-        var detailMatch = Regex.Match(text,
-            @"CHI TIẾT[:\s]*(.*?)(?=NHẬN XÉT CHUNG|$)",
-            RegexOptions.IgnoreCase | RegexOptions.Singleline);
-
-        if (detailMatch.Success)
-        {
-            var detail = detailMatch.Groups[1].Value.Trim();
-            if (detail.Length > 0) sb.AppendLine(detail);
-        }
-
-        // Lấy phần NHẬN XÉT CHUNG
+        // Chỉ lấy NHẬN XÉT CHUNG (bỏ CHI TIẾT từng câu)
         var feedbackMatch = Regex.Match(text,
             @"NHẬN XÉT CHUNG[:\s]*(.*?)$",
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
@@ -150,20 +136,22 @@ public class ResultParserService
         if (feedbackMatch.Success)
         {
             var feedback = feedbackMatch.Groups[1].Value.Trim();
-            if (feedback.Length > 0)
-            {
-                if (sb.Length > 0) sb.AppendLine();
-                sb.Append("NHẬN XÉT: " + feedback);
-            }
+            // Bỏ text thừa phía sau (nếu có text khác sau nhận xét)
+            var lines = feedback.Split('\n');
+            var cleanLines = lines.TakeWhile(l => !string.IsNullOrWhiteSpace(l)).ToArray();
+            if (cleanLines.Length > 0)
+                return string.Join(" ", cleanLines).Trim();
         }
 
-        if (sb.Length > 0) return sb.ToString();
+        // Fallback: tìm "Nhận xét:" 
+        var match = Regex.Match(text, @"[Nn]hận xét[:\s]*(.*?)(?:\n\n|$)", RegexOptions.Singleline);
+        if (match.Success)
+        {
+            var feedback = match.Groups[1].Value.Trim();
+            if (feedback.Length > 5) return feedback;
+        }
 
-        // Fallback: lấy toàn bộ text sau dòng ĐIỂM
-        var afterScore = Regex.Match(text, @"ĐIỂM[:\s]*\d.*?\n(.*)", RegexOptions.Singleline);
-        if (afterScore.Success) return afterScore.Groups[1].Value.Trim();
-
-        return TruncateText(text, 1000);
+        return string.Empty;
     }
 
     private static double ParseDouble(string value)
