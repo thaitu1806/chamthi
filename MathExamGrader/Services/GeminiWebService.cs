@@ -37,21 +37,25 @@ public class GeminiWebService : IDisposable
         string edgePath = GetEdgePath();
         int debugPort = 9222;
 
-        Log("Đang đóng Edge hiện tại (nếu có)...");
-        KillAllEdgeProcesses();
-        // Đợi lâu hơn để Edge đóng hoàn toàn (bao gồm child processes)
-        await Task.Delay(4000);
+        Log("Đang đóng Edge debug cũ (nếu có)...");
+        KillEdgeDebugProcess(debugPort);
+        await Task.Delay(2000);
 
-        string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
-            + @"\Microsoft\Edge\User Data";
+        // Dùng profile RIÊNG cho tool (không conflict với Edge thường)
+        // Thầy chỉ cần login Google lần đầu, sau đó session được lưu lại
+        string toolProfile = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "MathExamGrader", "EdgeProfile");
+        Directory.CreateDirectory(toolProfile);
 
-        Log($"Đang mở Edge với profile thật...");
+        Log($"Đang mở Edge (profile riêng cho tool)...");
 
+        // KHÔNG kill Edge thường — mở Edge mới với profile riêng
         var startInfo = new ProcessStartInfo
         {
             FileName = edgePath,
             Arguments = $"--remote-debugging-port={debugPort} " +
-                        $"--user-data-dir=\"{userProfile}\" " +
+                        $"--user-data-dir=\"{toolProfile}\" " +
                         $"--no-first-run " +
                         $"--no-default-browser-check " +
                         $"--disable-blink-features=AutomationControlled " +
@@ -99,21 +103,22 @@ public class GeminiWebService : IDisposable
                 
                 Log($"Chưa kết nối được, đợi {delayMs / 1000}s...");
                 
-                // Nếu lần 3 vẫn lỗi, kill Edge lần nữa rồi mở lại
+                // Nếu lần 3 vẫn lỗi, kill Edge debug và mở lại
                 if (i == 3)
                 {
-                    Log("Kill Edge lần nữa và mở lại...");
-                    KillAllEdgeProcesses();
+                    Log("Kill Edge debug và mở lại...");
+                    KillEdgeDebugProcess(port);
                     await Task.Delay(3000);
                     
                     string edgePath2 = GetEdgePath();
-                    string userProfile2 = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
-                        + @"\Microsoft\Edge\User Data";
+                    string toolProfile2 = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "MathExamGrader", "EdgeProfile");
                     var si = new ProcessStartInfo
                     {
                         FileName = edgePath2,
                         Arguments = $"--remote-debugging-port={port} " +
-                                    $"--user-data-dir=\"{userProfile2}\" " +
+                                    $"--user-data-dir=\"{toolProfile2}\" " +
                                     $"--no-first-run " +
                                     $"--no-default-browser-check " +
                                     $"--disable-blink-features=AutomationControlled " +
@@ -140,6 +145,48 @@ public class GeminiWebService : IDisposable
             { try { p.Kill(); } catch { } }
         }
         catch { }
+    }
+
+    /// <summary>
+    /// Chỉ kill Edge process đang dùng debug port (không kill Edge thường của user)
+    /// </summary>
+    private static void KillEdgeDebugProcess(int port)
+    {
+        try
+        {
+            // Kill Edge process có chứa "--remote-debugging-port" trong command line
+            // Dùng WMI hoặc đơn giản: kill process có user-data-dir chứa "MathExamGrader"
+            var edgeProcs = Process.GetProcessesByName("msedge");
+            foreach (var p in edgeProcs)
+            {
+                try
+                {
+                    // Kiểm tra command line (nếu có thể)
+                    string? cmdLine = GetProcessCommandLine(p.Id);
+                    if (cmdLine != null && cmdLine.Contains("MathExamGrader"))
+                    {
+                        p.Kill();
+                    }
+                }
+                catch { }
+            }
+        }
+        catch { }
+    }
+
+    private static string? GetProcessCommandLine(int pid)
+    {
+        try
+        {
+            using var searcher = new System.Management.ManagementObjectSearcher(
+                $"SELECT CommandLine FROM Win32_Process WHERE ProcessId = {pid}");
+            foreach (var obj in searcher.Get())
+            {
+                return obj["CommandLine"]?.ToString();
+            }
+        }
+        catch { }
+        return null;
     }
 
     private static string GetEdgePath()
