@@ -281,6 +281,7 @@ public partial class Form1 : Form
             _geminiService = new GeminiWebService();
             _geminiService.OnLog += (msg) => Invoke(() => Log(msg));
             _geminiService.MaxWaitSeconds = _settings.GeminiConfig.MaxWaitForResponse;
+            _geminiService.HideEdge = _settings.GeminiConfig.HideEdge;
             _formService.OnLog += (msg) => Invoke(() => Log(msg));
 
             Log("Đang khởi động browser...");

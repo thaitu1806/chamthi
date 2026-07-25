@@ -14,6 +14,7 @@ public class GeminiConfig
     public int DelayBetweenStudents { get; set; } = 5000;
     public int MaxWaitForResponse { get; set; } = 120;
     public bool AutoLogin { get; set; } = true;
+    public bool HideEdge { get; set; } = false;
 }
 
 public class GoogleFormConfig

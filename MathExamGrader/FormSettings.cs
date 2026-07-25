@@ -34,6 +34,7 @@ public partial class FormSettings : Form
         numDelay.Value = Math.Clamp(_settings.GeminiConfig.DelayBetweenStudents, 1000, 30000);
         numMaxWait.Value = Math.Clamp(_settings.GeminiConfig.MaxWaitForResponse, 30, 300);
         chkAutoLogin.Checked = _settings.GeminiConfig.AutoLogin;
+        chkHideEdge.Checked = _settings.GeminiConfig.HideEdge;
 
         // Google Form
         chkFormEnabled.Checked = _settings.GoogleFormConfig.Enabled;
@@ -66,6 +67,7 @@ public partial class FormSettings : Form
         _settings.GeminiConfig.DelayBetweenStudents = (int)numDelay.Value;
         _settings.GeminiConfig.MaxWaitForResponse = (int)numMaxWait.Value;
         _settings.GeminiConfig.AutoLogin = chkAutoLogin.Checked;
+        _settings.GeminiConfig.HideEdge = chkHideEdge.Checked;
 
         // Google Form
         _settings.GoogleFormConfig.Enabled = chkFormEnabled.Checked;

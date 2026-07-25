@@ -51,13 +51,15 @@ partial class FormSettings
 
         chkAutoLogin = new CheckBox { Text = "Tự động đăng nhập (dùng session đã lưu)", Location = new Point(15, 290), AutoSize = true, Checked = true };
 
+        chkHideEdge = new CheckBox { Text = "Ẩn Edge khi chạy (minimize xuống taskbar)", Location = new Point(15, 320), AutoSize = true, Checked = false };
+
         lblGeminiNote = new Label
         {
             Text = "💡 Hướng dẫn:\n" +
                    "1. Mở Edge → đăng nhập Google tại gemini.google.com\n" +
                    "2. Nhập email Google vào ô trên\n" +
                    "3. Tool sẽ dùng session Edge đã đăng nhập",
-            Location = new Point(15, 330),
+            Location = new Point(15, 355),
             Size = new Size(520, 100),
             ForeColor = Color.FromArgb(80, 80, 120)
         };
@@ -67,7 +69,7 @@ partial class FormSettings
             lblGoogleAccount, txtGoogleAccount,
             lblDelay, numDelay,
             lblMaxWait, numMaxWait,
-            chkAutoLogin, lblGeminiNote
+            chkAutoLogin, chkHideEdge, lblGeminiNote
         });
 
         // --- Tab 2: Google Form ---
@@ -232,6 +234,7 @@ partial class FormSettings
     private Label lblMaxWait;
     private NumericUpDown numMaxWait;
     private CheckBox chkAutoLogin;
+    private CheckBox chkHideEdge;
     private Label lblGeminiNote;
 
     // Form tab

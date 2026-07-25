@@ -28,6 +28,8 @@ public class GeminiWebService : IDisposable
         set => _maxWaitSeconds = value;
     }
 
+    public bool HideEdge { get; set; } = false;
+
     // ========== INITIALIZATION ==========
 
     public async Task InitializeAsync(string userDataDir)
@@ -59,10 +61,9 @@ public class GeminiWebService : IDisposable
                         $"--no-first-run " +
                         $"--no-default-browser-check " +
                         $"--disable-blink-features=AutomationControlled " +
-                        $"--window-position=-32000,-32000 " +
-                        $"--window-size=1280,900",
+                        (HideEdge ? "--window-position=-32000,-32000 --window-size=1280,900" : "--start-maximized"),
             UseShellExecute = true,
-            WindowStyle = ProcessWindowStyle.Minimized
+            WindowStyle = HideEdge ? ProcessWindowStyle.Minimized : ProcessWindowStyle.Normal
         };
 
         _edgeProcess = Process.Start(startInfo);
