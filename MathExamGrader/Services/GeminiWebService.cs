@@ -549,13 +549,15 @@ public class GeminiWebService : IDisposable
             await Task.Delay(2000);
 
             // Prompt yêu cầu chấm + lấy tên HS nếu có
+            // QUAN TRỌNG: thêm "Chỉ đưa ra 1 kết quả duy nhất" để tránh Gemini tạo 2 lựa chọn
             string prompt;
             if (hasAnswerKey)
             {
                 prompt = $"Chấm bài học sinh #{studentNumber} (file vừa upload). " +
-                         "So sánh với đáp án đã cho ở trên.\n" +
-                         "BẮT BUỘC trả lời ĐÚNG format (giữ nguyên từ khóa):\n\n" +
-                         "HỌ TÊN: [tên học sinh nếu thấy trên bài, nếu không thấy ghi \"Không rõ\"]\n" +
+                         "So sánh với đáp án đã cho.\n" +
+                         "CHỈ ĐƯA RA 1 KẾT QUẢ DUY NHẤT, KHÔNG tạo nhiều lựa chọn.\n" +
+                         "Trả lời ĐÚNG format:\n\n" +
+                         "HỌ TÊN: [tên HS nếu thấy, nếu không ghi \"Không rõ\"]\n" +
                          "ĐIỂM: [tổng]/10\n" +
                          "CHI TIẾT:\n- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n...\n" +
                          "NHẬN XÉT CHUNG: [1-2 câu]";
@@ -563,8 +565,9 @@ public class GeminiWebService : IDisposable
             else
             {
                 prompt = $"Đọc và chấm bài thi Toán #{studentNumber} (file vừa upload).\n" +
-                         "BẮT BUỘC trả lời ĐÚNG format:\n\n" +
-                         "HỌ TÊN: [tên học sinh nếu thấy trên bài, nếu không thấy ghi \"Không rõ\"]\n" +
+                         "CHỈ ĐƯA RA 1 KẾT QUẢ DUY NHẤT, KHÔNG tạo nhiều lựa chọn.\n" +
+                         "Trả lời ĐÚNG format:\n\n" +
+                         "HỌ TÊN: [tên HS nếu thấy, nếu không ghi \"Không rõ\"]\n" +
                          "ĐIỂM: [tổng]/10\n" +
                          "CHI TIẾT:\n- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n...\n" +
                          "NHẬN XÉT CHUNG: [1-2 câu]";
@@ -1080,9 +1083,18 @@ public class GeminiWebService : IDisposable
         // Đợi DOM ổn định
         await Task.Delay(3000);
 
-        // Lấy TOÀN BỘ text response cuối cùng bằng nhiều cách
+        // Nếu Gemini hiện 2 lựa chọn (drafts), click vào lựa chọn đầu tiên
+        await _page.EvaluateAsync(@"() => {
+            // Tìm nút 'Lựa chọn A' hoặc draft đầu tiên và click
+            const draftBtns = document.querySelectorAll('[class*=""draft""], [aria-label*=""Lựa chọn""], [aria-label*=""Draft""]');
+            if (draftBtns.length > 0) {
+                draftBtns[0].click();
+            }
+        }");
+        await Task.Delay(1000);
+
+        // Lấy TOÀN BỘ text response
         var response = await _page.EvaluateAsync<string?>(@"() => {
-            // Cách 1: Lấy tất cả response containers, chọn cái cuối & dài nhất
             const selectors = [
                 '[data-message-author-role=""model""]',
                 'message-content.model-response-text',
@@ -1096,7 +1108,6 @@ public class GeminiWebService : IDisposable
             for (const sel of selectors) {
                 const elements = document.querySelectorAll(sel);
                 if (elements.length > 0) {
-                    // Lấy element cuối cùng (response mới nhất)
                     const last = elements[elements.length - 1];
                     const text = (last.innerText || last.textContent || '').trim();
                     if (text.length > bestText.length) {
@@ -1107,47 +1118,47 @@ public class GeminiWebService : IDisposable
             
             if (bestText.length > 50) return bestText;
 
-            // Cách 2: Tìm theo cấu trúc conversation - lấy block cuối có nội dung dài
+            // Fallback: tìm div có nội dung chấm bài
             const allElements = document.querySelectorAll('div, article, section');
-            let longestInLowerHalf = '';
-            const totalHeight = document.body.scrollHeight;
+            let longestMatch = '';
             
             for (const el of allElements) {
-                const rect = el.getBoundingClientRect();
                 const text = (el.innerText || '').trim();
-                // Element phải ở nửa dưới page (response area) và có content đáng kể
-                if (rect.top > totalHeight * 0.2 && text.length > 100 && text.length < 50000) {
-                    // Kiểm tra có dấu hiệu là response (chứa từ khóa chấm bài)
+                if (text.length > 100 && text.length < 50000) {
                     const lower = text.toLowerCase();
-                    if (lower.includes('điểm') || lower.includes('câu') || lower.includes('nhận xét') || lower.includes('đúng') || lower.includes('sai')) {
-                        if (text.length > longestInLowerHalf.length) {
-                            longestInLowerHalf = text;
+                    if (lower.includes('điểm') && (lower.includes('câu') || lower.includes('bài'))) {
+                        if (text.length > longestMatch.length) {
+                            longestMatch = text;
                         }
                     }
                 }
             }
             
-            if (longestInLowerHalf.length > bestText.length) return longestInLowerHalf;
+            if (longestMatch.length > bestText.length) return longestMatch;
             if (bestText.length > 20) return bestText;
 
-            // Cách 3: Lấy toàn bộ main area
             const main = document.querySelector('[role=""main""]') || document.querySelector('main');
-            if (main) {
-                const fullText = (main.innerText || '').trim();
-                if (fullText.length > 50) return fullText;
-            }
+            if (main) return (main.innerText || '').trim();
             
             return bestText || null;
         }");
 
         if (!string.IsNullOrEmpty(response) && response.Length > 20)
         {
+            // Nếu response chứa cả 2 lựa chọn, chỉ lấy phần đầu tiên
+            if (response.Contains("Lựa chọn B") || response.Contains("Draft B"))
+            {
+                var splitIdx = response.IndexOf("Lựa chọn B");
+                if (splitIdx < 0) splitIdx = response.IndexOf("Draft B");
+                if (splitIdx > 50) response = response.Substring(0, splitIdx).Trim();
+            }
+
             Log($"   📋 Response: {response.Length} chars");
             return response;
         }
 
-        // Fallback: scroll down rồi thử lại (có thể response bị ẩn do scroll)
-        Log("   ⚠️ Response ngắn, thử scroll down...");
+        // Fallback: scroll down rồi thử lại
+        Log("   ⚠️ Response ngắn, thử scroll...");
         await _page.EvaluateAsync("() => window.scrollTo(0, document.body.scrollHeight)");
         await Task.Delay(2000);
 

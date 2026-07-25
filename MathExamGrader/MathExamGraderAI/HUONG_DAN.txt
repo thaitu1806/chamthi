@@ -1,0 +1,19 @@
+═══════════════════════════════════════════════════
+  🎓 CHẤM BÀI THI TOÁN - GEMINI AI (Portable)
+═══════════════════════════════════════════════════
+
+📋 YÊU CẦU:
+  - Windows 10/11
+  - Microsoft Edge (có sẵn trên Windows)
+  - Kết nối Internet
+
+🚀 CÁCH CHẠY:
+  1. Double-click "MathExamGrader.exe" trong thư mục này
+  2. Lần đầu: Edge mở → Đăng nhập Google → Vào gemini.google.com
+  3. Sau khi login xong, tool tự chạy các lần sau
+
+⚠️ LƯU Ý:
+  - KHÔNG xóa các file/thư mục trong folder này (cần thiết để chạy)
+  - Copy CẢ THƯ MỤC này sang máy khác để dùng
+  - File hỗ trợ: .docx, .pdf, .png, .jpg, .jpeg, .bmp
+  - Kết quả CSV tự lưu trên Desktop
