@@ -29,6 +29,9 @@ public class GeminiWebService : IDisposable
     }
 
     public bool HideEdge { get; set; } = false;
+    public string PromptAnswerKey { get; set; } = "";
+    public string PromptGradeWithAnswer { get; set; } = "";
+    public string PromptGradeNoAnswer { get; set; } = "";
 
     // ========== INITIALIZATION ==========
 
@@ -510,7 +513,11 @@ public class GeminiWebService : IDisposable
 
         // Gửi prompt yêu cầu Gemini ghi nhớ đáp án
         string prompt;
-        if (!string.IsNullOrEmpty(answerFilePath) && !string.IsNullOrEmpty(answerText))
+        if (!string.IsNullOrEmpty(PromptAnswerKey))
+        {
+            prompt = PromptAnswerKey;
+        }
+        else if (!string.IsNullOrEmpty(answerFilePath) && !string.IsNullOrEmpty(answerText))
         {
             prompt = "Đây là ĐÁP ÁN bài thi Toán (file đã upload + text bổ sung bên dưới). " +
                      "Hãy ghi nhớ đáp án này. Tôi sẽ gửi từng bài làm của học sinh để bạn chấm điểm.\n\n" +
@@ -553,24 +560,18 @@ public class GeminiWebService : IDisposable
             string prompt;
             if (hasAnswerKey)
             {
-                prompt = $"Chấm bài học sinh #{studentNumber} (file vừa upload). " +
-                         "So sánh với đáp án đã cho.\n" +
-                         "CHỈ ĐƯA RA 1 KẾT QUẢ DUY NHẤT, KHÔNG tạo nhiều lựa chọn.\n" +
-                         "Trả lời ĐÚNG format:\n\n" +
-                         "HỌ TÊN: [tên HS nếu thấy, nếu không ghi \"Không rõ\"]\n" +
-                         "ĐIỂM: [tổng]/10\n" +
-                         "CHI TIẾT:\n- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n...\n" +
-                         "NHẬN XÉT CHUNG: [1-2 câu]";
+                prompt = !string.IsNullOrEmpty(PromptGradeWithAnswer)
+                    ? PromptGradeWithAnswer.Replace("{number}", studentNumber.ToString())
+                    : $"Chấm bài học sinh #{studentNumber} (file vừa upload). " +
+                      "So sánh với đáp án đã cho.\nCHỈ ĐƯA RA 1 KẾT QUẢ DUY NHẤT.\n" +
+                      "Format:\nHỌ TÊN: [tên]\nĐIỂM: [tổng]/10\nCHI TIẾT:\n- Câu 1: ...\nNHẬN XÉT CHUNG: [1-2 câu]";
             }
             else
             {
-                prompt = $"Đọc và chấm bài thi Toán #{studentNumber} (file vừa upload).\n" +
-                         "CHỈ ĐƯA RA 1 KẾT QUẢ DUY NHẤT, KHÔNG tạo nhiều lựa chọn.\n" +
-                         "Trả lời ĐÚNG format:\n\n" +
-                         "HỌ TÊN: [tên HS nếu thấy, nếu không ghi \"Không rõ\"]\n" +
-                         "ĐIỂM: [tổng]/10\n" +
-                         "CHI TIẾT:\n- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n...\n" +
-                         "NHẬN XÉT CHUNG: [1-2 câu]";
+                prompt = !string.IsNullOrEmpty(PromptGradeNoAnswer)
+                    ? PromptGradeNoAnswer.Replace("{number}", studentNumber.ToString())
+                    : $"Chấm bài thi Toán #{studentNumber} (file vừa upload).\nCHỈ ĐƯA RA 1 KẾT QUẢ.\n" +
+                      "Format:\nHỌ TÊN: [tên]\nĐIỂM: [tổng]/10\nCHI TIẾT:\n- Câu 1: ...\nNHẬN XÉT CHUNG: [1-2 câu]";
             }
 
             await TypePromptAsync(prompt);

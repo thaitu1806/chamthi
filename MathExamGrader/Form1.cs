@@ -282,6 +282,9 @@ public partial class Form1 : Form
             _geminiService.OnLog += (msg) => Invoke(() => Log(msg));
             _geminiService.MaxWaitSeconds = _settings.GeminiConfig.MaxWaitForResponse;
             _geminiService.HideEdge = _settings.GeminiConfig.HideEdge;
+            _geminiService.PromptAnswerKey = _settings.GeminiConfig.PromptAnswerKey;
+            _geminiService.PromptGradeWithAnswer = _settings.GeminiConfig.PromptGradeWithAnswer;
+            _geminiService.PromptGradeNoAnswer = _settings.GeminiConfig.PromptGradeNoAnswer;
             _formService.OnLog += (msg) => Invoke(() => Log(msg));
 
             Log("Đang khởi động browser...");

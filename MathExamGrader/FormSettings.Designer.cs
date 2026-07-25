@@ -180,10 +180,36 @@ partial class FormSettings
             lblEncoding, cboEncoding
         });
 
+        // --- Tab 4: Prompt ---
+        tabPrompt = new TabPage("✏️ Prompt");
+        tabPrompt.Padding = new Padding(10);
+        tabPrompt.AutoScroll = true;
+
+        lblPromptAnswer = new Label { Text = "Prompt gửi đáp án:", Location = new Point(10, 10), AutoSize = true, Font = new Font("Segoe UI", 9F, FontStyle.Bold) };
+        txtPromptAnswer = new TextBox { Location = new Point(10, 32), Size = new Size(490, 60), Multiline = true, ScrollBars = ScrollBars.Vertical, Font = new Font("Consolas", 8.5F) };
+
+        lblPromptWithAnswer = new Label { Text = "Prompt chấm bài (có đáp án):", Location = new Point(10, 100), AutoSize = true, Font = new Font("Segoe UI", 9F, FontStyle.Bold) };
+        txtPromptWithAnswer = new TextBox { Location = new Point(10, 122), Size = new Size(490, 100), Multiline = true, ScrollBars = ScrollBars.Vertical, Font = new Font("Consolas", 8.5F) };
+
+        lblPromptNoAnswer = new Label { Text = "Prompt chấm bài (không đáp án):", Location = new Point(10, 230), AutoSize = true, Font = new Font("Segoe UI", 9F, FontStyle.Bold) };
+        txtPromptNoAnswer = new TextBox { Location = new Point(10, 252), Size = new Size(490, 100), Multiline = true, ScrollBars = ScrollBars.Vertical, Font = new Font("Consolas", 8.5F) };
+
+        var lblPromptHint = new Label
+        {
+            Text = "💡 Dùng {number} cho số thứ tự học sinh. Giữ format HỌ TÊN/ĐIỂM/CHI TIẾT/NHẬN XÉT CHUNG.",
+            Location = new Point(10, 360),
+            Size = new Size(490, 40),
+            ForeColor = Color.Gray,
+            Font = new Font("Segoe UI", 8.5F)
+        };
+
+        tabPrompt.Controls.AddRange(new Control[] { lblPromptAnswer, txtPromptAnswer, lblPromptWithAnswer, txtPromptWithAnswer, lblPromptNoAnswer, txtPromptNoAnswer, lblPromptHint });
+
         // Add tabs
         tabControl.TabPages.Add(tabGemini);
         tabControl.TabPages.Add(tabForm);
         tabControl.TabPages.Add(tabExport);
+        tabControl.TabPages.Add(tabPrompt);
 
         // === Buttons (Panel phía dưới) ===
         var panelButtons = new Panel();
@@ -267,4 +293,13 @@ partial class FormSettings
     // Buttons
     private Button btnSave;
     private Button btnCancel;
+
+    // Prompt tab
+    private TabPage tabPrompt;
+    private Label lblPromptAnswer;
+    private TextBox txtPromptAnswer;
+    private Label lblPromptWithAnswer;
+    private TextBox txtPromptWithAnswer;
+    private Label lblPromptNoAnswer;
+    private TextBox txtPromptNoAnswer;
 }

@@ -36,6 +36,11 @@ public partial class FormSettings : Form
         chkAutoLogin.Checked = _settings.GeminiConfig.AutoLogin;
         chkHideEdge.Checked = _settings.GeminiConfig.HideEdge;
 
+        // Prompt
+        txtPromptAnswer.Text = _settings.GeminiConfig.PromptAnswerKey;
+        txtPromptWithAnswer.Text = _settings.GeminiConfig.PromptGradeWithAnswer;
+        txtPromptNoAnswer.Text = _settings.GeminiConfig.PromptGradeNoAnswer;
+
         // Google Form
         chkFormEnabled.Checked = _settings.GoogleFormConfig.Enabled;
         txtFormUrl2.Text = _settings.GoogleFormConfig.FormUrl;
@@ -68,6 +73,11 @@ public partial class FormSettings : Form
         _settings.GeminiConfig.MaxWaitForResponse = (int)numMaxWait.Value;
         _settings.GeminiConfig.AutoLogin = chkAutoLogin.Checked;
         _settings.GeminiConfig.HideEdge = chkHideEdge.Checked;
+
+        // Prompt
+        _settings.GeminiConfig.PromptAnswerKey = txtPromptAnswer.Text.Trim();
+        _settings.GeminiConfig.PromptGradeWithAnswer = txtPromptWithAnswer.Text.Trim();
+        _settings.GeminiConfig.PromptGradeNoAnswer = txtPromptNoAnswer.Text.Trim();
 
         // Google Form
         _settings.GoogleFormConfig.Enabled = chkFormEnabled.Checked;

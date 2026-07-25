@@ -15,6 +15,11 @@ public class GeminiConfig
     public int MaxWaitForResponse { get; set; } = 120;
     public bool AutoLogin { get; set; } = true;
     public bool HideEdge { get; set; } = false;
+
+    // Prompt templates (thầy tùy chỉnh)
+    public string PromptAnswerKey { get; set; } = "Đây là ĐÁP ÁN bài thi Toán (file đã upload). Hãy ghi nhớ đáp án này. Tôi sẽ gửi từng bài làm của học sinh để bạn chấm điểm theo đáp án này.";
+    public string PromptGradeWithAnswer { get; set; } = "Chấm bài học sinh #{number} (file vừa upload). So sánh với đáp án đã cho.\nCHỈ ĐƯA RA 1 KẾT QUẢ DUY NHẤT, KHÔNG tạo nhiều lựa chọn.\nTrả lời ĐÚNG format:\n\nHỌ TÊN: [tên HS nếu thấy, nếu không ghi \"Không rõ\"]\nĐIỂM: [tổng]/10\nCHI TIẾT:\n- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n...\nNHẬN XÉT CHUNG: [1-2 câu]";
+    public string PromptGradeNoAnswer { get; set; } = "Đọc và chấm bài thi Toán #{number} (file vừa upload).\nCHỈ ĐƯA RA 1 KẾT QUẢ DUY NHẤT, KHÔNG tạo nhiều lựa chọn.\nTrả lời ĐÚNG format:\n\nHỌ TÊN: [tên HS nếu thấy, nếu không ghi \"Không rõ\"]\nĐIỂM: [tổng]/10\nCHI TIẾT:\n- Câu 1: [điểm] - [đúng/sai] - [nhận xét]\n...\nNHẬN XÉT CHUNG: [1-2 câu]";
 }
 
 public class GoogleFormConfig
