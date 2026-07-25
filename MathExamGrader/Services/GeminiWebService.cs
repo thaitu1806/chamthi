@@ -575,9 +575,14 @@ public class GeminiWebService : IDisposable
 
             await TypePromptAsync(prompt);
             await Task.Delay(1000);
+
+            // Đếm số response hiện tại TRƯỚC khi gửi
+            int responseCountBefore = await GetResponseCount();
+
             await SubmitAndWaitAsync();
 
-            string result = await GetLatestResponseAsync();
+            // Lấy response MỚI (cái cuối cùng, sau khi gửi)
+            string result = await GetLatestResponseAsync(responseCountBefore);
             Log($"✅ Đã chấm xong bài #{studentNumber}: {Path.GetFileName(examFilePath)}");
             return result;
         }
@@ -1076,7 +1081,25 @@ public class GeminiWebService : IDisposable
 
     // ========== GET RESPONSE ==========
 
-    private async Task<string> GetLatestResponseAsync()
+    private async Task<int> GetResponseCount()
+    {
+        if (_page == null) return 0;
+        return await _page.EvaluateAsync<int>(@"() => {
+            // Đếm số response blocks từ model
+            const selectors = [
+                '[data-message-author-role=""model""]',
+                'message-content.model-response-text',
+                '.model-response-text',
+            ];
+            for (const sel of selectors) {
+                const count = document.querySelectorAll(sel).length;
+                if (count > 0) return count;
+            }
+            return 0;
+        }");
+    }
+
+    private async Task<string> GetLatestResponseAsync(int responseCountBefore = 0)
     {
         if (_page == null) return "Không lấy được kết quả.";
 
@@ -1093,8 +1116,8 @@ public class GeminiWebService : IDisposable
         }");
         await Task.Delay(1000);
 
-        // Lấy TOÀN BỘ text response
-        var response = await _page.EvaluateAsync<string?>(@"() => {
+        // Lấy TOÀN BỘ text response — CHỈ lấy response MỚI NHẤT (sau responseCountBefore)
+        var response = await _page.EvaluateAsync<string?>(@"(prevCount) => {
             const selectors = [
                 '[data-message-author-role=""model""]',
                 'message-content.model-response-text',
@@ -1103,45 +1126,28 @@ public class GeminiWebService : IDisposable
                 '.response-container',
             ];
             
-            let bestText = '';
-            
+            for (const sel of selectors) {
+                const elements = document.querySelectorAll(sel);
+                if (elements.length > prevCount) {
+                    // Lấy response cuối cùng (mới nhất)
+                    const last = elements[elements.length - 1];
+                    const text = (last.innerText || last.textContent || '').trim();
+                    if (text.length > 30) return text;
+                }
+            }
+
+            // Fallback: lấy response cuối bất kể count
             for (const sel of selectors) {
                 const elements = document.querySelectorAll(sel);
                 if (elements.length > 0) {
                     const last = elements[elements.length - 1];
                     const text = (last.innerText || last.textContent || '').trim();
-                    if (text.length > bestText.length) {
-                        bestText = text;
-                    }
+                    if (text.length > 30) return text;
                 }
             }
             
-            if (bestText.length > 50) return bestText;
-
-            // Fallback: tìm div có nội dung chấm bài
-            const allElements = document.querySelectorAll('div, article, section');
-            let longestMatch = '';
-            
-            for (const el of allElements) {
-                const text = (el.innerText || '').trim();
-                if (text.length > 100 && text.length < 50000) {
-                    const lower = text.toLowerCase();
-                    if (lower.includes('điểm') && (lower.includes('câu') || lower.includes('bài'))) {
-                        if (text.length > longestMatch.length) {
-                            longestMatch = text;
-                        }
-                    }
-                }
-            }
-            
-            if (longestMatch.length > bestText.length) return longestMatch;
-            if (bestText.length > 20) return bestText;
-
-            const main = document.querySelector('[role=""main""]') || document.querySelector('main');
-            if (main) return (main.innerText || '').trim();
-            
-            return bestText || null;
-        }");
+            return null;
+        }", responseCountBefore);
 
         if (!string.IsNullOrEmpty(response) && response.Length > 20)
         {
