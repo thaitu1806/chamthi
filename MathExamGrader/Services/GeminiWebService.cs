@@ -39,7 +39,8 @@ public class GeminiWebService : IDisposable
 
         Log("Đang đóng Edge hiện tại (nếu có)...");
         KillAllEdgeProcesses();
-        await Task.Delay(2000);
+        // Đợi lâu hơn để Edge đóng hoàn toàn (bao gồm child processes)
+        await Task.Delay(4000);
 
         string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
             + @"\Microsoft\Edge\User Data";
@@ -94,9 +95,38 @@ public class GeminiWebService : IDisposable
             catch (Exception ex)
             {
                 if (i == maxRetries)
-                    throw new Exception($"Không thể kết nối Edge sau {maxRetries} lần.\nLỗi: {ex.Message}", ex);
+                    throw new Exception($"Không thể kết nối Edge sau {maxRetries} lần.\nLỗi: {ex.Message}\n\nThử đóng Edge thủ công rồi chạy lại.", ex);
+                
                 Log($"Chưa kết nối được, đợi {delayMs / 1000}s...");
-                await Task.Delay(delayMs);
+                
+                // Nếu lần 3 vẫn lỗi, kill Edge lần nữa rồi mở lại
+                if (i == 3)
+                {
+                    Log("Kill Edge lần nữa và mở lại...");
+                    KillAllEdgeProcesses();
+                    await Task.Delay(3000);
+                    
+                    string edgePath2 = GetEdgePath();
+                    string userProfile2 = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
+                        + @"\Microsoft\Edge\User Data";
+                    var si = new ProcessStartInfo
+                    {
+                        FileName = edgePath2,
+                        Arguments = $"--remote-debugging-port={port} " +
+                                    $"--user-data-dir=\"{userProfile2}\" " +
+                                    $"--no-first-run " +
+                                    $"--no-default-browser-check " +
+                                    $"--disable-blink-features=AutomationControlled " +
+                                    $"--start-maximized",
+                        UseShellExecute = true
+                    };
+                    Process.Start(si);
+                    await Task.Delay(4000);
+                }
+                else
+                {
+                    await Task.Delay(delayMs);
+                }
             }
         }
         throw new Exception("Unexpected");
