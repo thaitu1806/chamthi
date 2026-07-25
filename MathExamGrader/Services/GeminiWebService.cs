@@ -1021,20 +1021,18 @@ public class GeminiWebService : IDisposable
         if (_page == null) return;
 
         // Đợi Gemini bắt đầu generate
-        await Task.Delay(3000);
+        await Task.Delay(5000);
 
         // Lấy text hiện tại để so sánh
         string previousText = "";
-        int stableCount = 0; // Đếm số lần text không đổi liên tiếp
+        int stableCount = 0;
 
         int maxWait = _maxWaitSeconds;
         for (int i = 0; i < maxWait; i++)
         {
             await Task.Delay(1000);
 
-            // Lấy text response hiện tại
             var currentText = await _page.EvaluateAsync<string?>(@"() => {
-                // Tìm response mới nhất
                 const selectors = [
                     '[data-message-author-role=""model""]',
                     'message-content.model-response-text',
@@ -1049,18 +1047,21 @@ public class GeminiWebService : IDisposable
                         return (last.innerText || '').trim();
                     }
                 }
-                // Fallback
-                const main = document.querySelector('[role=""main""]');
-                return main ? (main.innerText || '').trim() : '';
+                return '';
             }") ?? "";
 
-            // Nếu text không thay đổi 3 lần liên tiếp (3 giây) → coi như xong
-            if (currentText.Length > 20 && currentText == previousText)
+            // Bỏ qua nếu text là loading/placeholder
+            bool isLoading = currentText.Length < 50 ||
+                             currentText.Contains("Initiating") ||
+                             currentText.Contains("Analyzing") ||
+                             currentText.Contains("Đang phân tích") ||
+                             currentText.Contains("Gemini đang");
+
+            if (!isLoading && currentText.Length > 50 && currentText == previousText)
             {
                 stableCount++;
                 if (stableCount >= 3)
                 {
-                    // Xong!
                     break;
                 }
             }
@@ -1070,7 +1071,6 @@ public class GeminiWebService : IDisposable
                 previousText = currentText;
             }
 
-            // Log progress mỗi 15 giây
             if (i > 0 && i % 15 == 0)
             {
                 Log($"   Vẫn đang đợi... ({i}s)");
